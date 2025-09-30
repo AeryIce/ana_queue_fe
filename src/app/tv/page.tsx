@@ -208,30 +208,41 @@ export default function TVPage() {
 
       {/* CREDIT */}
       <footer className="mt-12">
-  <div className="flex justify-end items-center gap-4">
-    <Image
-      src="/brand/periplus-blog.jpg"
-      alt="Periplus Blog"
-      width={220}
-      height={55}
-      className="h-10 w-auto drop-shadow-sm"
-      priority
-    />
-    <div
-      className="
-        inline-flex items-center gap-3
-        rounded-full border border-rose-300
-        bg-gradient-to-r from-rose-50 to-pink-50
-        px-6 py-3 shadow-sm
-      "
-    >
-      <span className="text-sm text-rose-600">Dipersembahkan oleh</span>
-      <span className="font-serif text-2xl md:text-3xl font-bold tracking-tight text-rose-900">
-        Periplus
-      </span>
-    </div>
-  </div>
-</footer>
+        <div className="flex justify-end">
+          <div
+            className="
+              flex items-center gap-4
+              rounded-full border border-rose-300
+              bg-white/85 backdrop-blur
+              px-5 md:px-6 py-3
+              shadow-[0_10px_25px_-12px_rgba(0,0,0,0.25)]
+            "
+          >
+            {/* Logo Periplus Blog */}
+            <Image
+              src="/brand/periplus-blog.png"
+              alt="Periplus Blog"
+              width={260}
+              height={64}
+              className="h-10 md:h-12 w-auto drop-shadow-sm"
+              priority
+            />
+
+            {/* Separator */}
+            <span className="hidden md:block h-8 w-px bg-rose-200/70 rounded-full" aria-hidden />
+
+            {/* Host text */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-rose-600">Dipersembahkan oleh</span>
+              <span className="font-serif text-2xl md:text-3xl font-bold tracking-tight text-rose-900">
+                Periplus
+              </span>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+
 
     </main>
   );
