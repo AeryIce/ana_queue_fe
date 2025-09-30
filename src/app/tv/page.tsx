@@ -54,7 +54,7 @@ export default function TVPage() {
       }}
     >
       {/* HERO — kiri (teks/strip/brand), kanan (foto) */}
-      <section className="rounded-3xl bg-white/70 border border-rose-200 shadow-sm backdrop-blur-sm p-6 md:p-8">
+      <section className="rounded-3xl bg-white/70 border border-rose-200 shadow-sm backdrop-blur-sm p-6 md:p-8 relative">
         <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_320px] items-start">
           {/* kiri */}
           <div className="relative">
@@ -67,6 +67,29 @@ export default function TVPage() {
               <span className="font-semibold">Twisted</span> dan{" "}
               <span className="font-semibold">Kings of Sin</span>.
             </p>
+
+            {/* ===== ISENG: Badge MC (pojok kiri bawah hero). Hapus blok ini kalau sudah bosan ===== */}
+            <div className="hidden md:flex items-center gap-3 absolute right-1.5 top-16 z-20 mc-float">
+                  <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-white/90 backdrop-blur px-4 py-3 shadow-md">
+                    <div className="relative h-12 w-12 rounded-full overflow-hidden ring-2 ring-rose-200">
+                      <Image
+                        src="/host/mc.jpeg" // ganti path kalau beda
+                        alt="MC Kondang"
+                        fill
+                        className="object-cover"
+                        priority
+                      />
+                    </div>
+                    <div className="leading-tight">
+                      <div className="text-[10px] tracking-[.15em] uppercase font-bold text-rose-500">
+                        Master of Ceremony
+                      </div>
+                      <div className="text-rose-900 font-extrabold">Pawang Riuh</div>
+                      <div className="text-xs text-rose-700/80">Satu Sapaan, Seribu Senyuman</div>
+                    </div>
+                  </div>
+                </div>
+            {/* ===== END ISENG ================================================================== */}
 
             {/* strip: 4 kartu terlihat, geser 1 kartu */}
             <div className="mt-6">
@@ -110,7 +133,6 @@ export default function TVPage() {
 
             {/* BRAND: ukuran sama dengan foto & animasi float */}
             <div className="hidden md:flex absolute right-0 top-[60%] -translate-y-1/2 z-10">
-
               <div
                 className="
                   relative mx-auto w-48 md:w-60 lg:w-72 aspect-[3/4]
@@ -229,7 +251,10 @@ export default function TVPage() {
             />
 
             {/* Separator */}
-            <span className="hidden md:block h-8 w-px bg-rose-200/70 rounded-full" aria-hidden />
+            <span
+              className="hidden md:block h-8 w-px bg-rose-200/70 rounded-full"
+              aria-hidden="true"
+            />
 
             {/* Host text */}
             <div className="flex items-center gap-2">
@@ -241,9 +266,6 @@ export default function TVPage() {
           </div>
         </div>
       </footer>
-
-
-
     </main>
   );
 }

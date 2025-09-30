@@ -129,3 +129,19 @@
   .animate-marquee { animation: marquee 40s linear infinite; }
   .animate-paused:hover { animation-play-state: paused; } /* berhenti saat dihover */
 }
+
+/* ===== Brand card float (dipakai badge Periplus yang gede) ===== */
+@keyframes brandFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+/* ===== MC lebay mengambang tipis ===== */
+@keyframes mcFloat {
+  0%, 100% { transform: translateY(0) rotate(-0.2deg); }
+  50%      { transform: translateY(-6px) rotate(0.2deg); }
+}
+
+.mc-float {
+  animation: mcFloat 4.8s ease-in-out infinite;
+}
