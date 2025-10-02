@@ -1,22 +1,26 @@
-import "./globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import { Toaster } from "@/components/ui/sonner";
+import "./globals.css";
+import { ToastProvider } from "@/components/Toast";
 
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Ana Huang Queue",
-  description: "Digital queue display & admin",
+title: "Ana Huang — Queue Display",
+description: "Sistem antrian & display acara book signing Ana Huang (dipersembahkan oleh Periplus)",
+themeColor: "#111",
+openGraph: {
+title: "Ana Huang — Queue Display",
+description: "Sistem antrian & display acara book signing Ana Huang",
+images: ["/ana/ana-hero.jpg"],
+},
 };
 
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-dvh bg-background text-foreground antialiased`}>
-        {children}
-        <Toaster richColors />
-      </body>
-    </html>
-  );
+return (
+<html lang="id">
+<body>
+<ToastProvider>{children}</ToastProvider>
+</body>
+</html>
+);
 }
