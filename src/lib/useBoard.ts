@@ -7,24 +7,31 @@ export function useBoard(pollMs = 2000) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  async function refresh() {
+  const refresh = async (): Promise<void> => {
     try {
       const b = await queueApi.board();
       setData(b);
       setErr(null);
-    } catch (e: any) {
-      setErr(e?.message ?? 'Error');
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
     let stop = false;
-    const tick = async () => { if (!stop) await refresh(); };
-    tick();
-    const id = setInterval(tick, pollMs);
-    return () => { stop = true; clearInterval(id); };
+    const tick = async () => {
+      if (!stop) {
+        await refresh();
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), pollMs);
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
   }, [pollMs]);
 
   return { data, loading, err, refresh };
