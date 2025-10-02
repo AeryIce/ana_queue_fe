@@ -2,39 +2,48 @@
 
 import React, { useState } from "react";
 import type { Ticket } from "@/lib/queueApi";
-import { callByCode, callNext } from "@/lib/queueApi";
+import { callByCode, callNext, fetchBoard } from "@/lib/queueApi";
 import { useToast } from "@/components/Toast";
 
-export function AdminToolbar({
-  onSuccess,
-  next = [],
-}: {
+type Props = {
   onSuccess?: () => void;
-  next?: Ticket[];
-}) {
+  eventId?: string; // default "seed-event"
+};
+
+export function AdminToolbar({ onSuccess, eventId = "seed-event" }: Props) {
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState("");
   const N = Number(process.env.NEXT_PUBLIC_ACTIVE_SLOT_SIZE) || 6;
   const { push } = useToast();
 
   const doCallNext = async () => {
+    setBusy(true);
     try {
-      setBusy(true);
-      // coba endpoint BE
-      await callNext(N);
+      // 1) Coba endpoint resmi BE
+      await callNext(N, eventId);
       onSuccess?.();
       push(`Dipanggil ${N} nomor ke slot aktif`, "Sukses");
-    } catch (err) {
-      // fallback: ambil N terdepan dari NEXT
-      const pick = (next || []).slice(0, N);
-      if (pick.length === 0) {
-        push("Tidak ada tiket NEXT untuk dipanggil", "Info");
-      } else {
+      return;
+    } catch {
+      // 2) Fallback PASTI: ambil NEXT terbaru dari /api/board, lalu panggil N tiket sekaligus
+      try {
+        const board = await fetchBoard(eventId);
+        const pick: Ticket[] = (board.next ?? []).slice(0, N);
+
+        if (pick.length === 0) {
+          push("Tidak ada tiket di NEXT untuk dipanggil.", "Info");
+          return;
+        }
+
+        // panggil berurutan biar rapi di BE
         for (const t of pick) {
           await callByCode(t.code);
         }
+
         onSuccess?.();
         push(`Fallback: panggil ${pick.length} dari NEXT`, "Sukses");
+      } catch (e) {
+        push("Fallback gagal memanggil NEXT.", "Gagal");
       }
     } finally {
       setBusy(false);
@@ -43,15 +52,15 @@ export function AdminToolbar({
 
   const doCallByCode = async () => {
     if (!code.trim()) return;
+    setBusy(true);
     try {
-      setBusy(true);
       const c = code.trim().toUpperCase();
       await callByCode(c);
       setCode("");
       onSuccess?.();
       push(`Nomor ${c} dipanggil`, "Sukses");
-    } catch (err) {
-      push("Gagal memanggil nomor", "Error");
+    } catch {
+      push("Gagal memanggil nomor.", "Gagal");
     } finally {
       setBusy(false);
     }
@@ -82,4 +91,3 @@ export function AdminToolbar({
     </div>
   );
 }
-
