@@ -1,33 +1,33 @@
 'use client';
-import type { Board } from '@/lib/queueApi';
 
-export default function BoardView({ board }: { board: Board | null }) {
+import type { BoardResponse, Ticket } from '@/lib/queueApi';
+
+export default function BoardView({ board }: { board: BoardResponse | null }) {
   if (!board) return null;
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <section className="p-4 rounded-2xl shadow bg-white/80">
-        <h3 className="font-bold mb-2">Active (IN_PROCESS → CALLED)</h3>
-        <ul className="space-y-2">
-          {board.active.map(t => (
-            <li key={t.id} className="flex items-center justify-between rounded-xl px-3 py-2 border">
-              <span className="font-semibold">{t.code}</span>
-              <span className="text-xs px-2 py-1 rounded bg-green-100">{t.status}</span>
+    <div className="space-y-4">
+      <section>
+        <h3 className="text-sm font-semibold">Active</h3>
+        <ul className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {board.active.map((t: Ticket) => (
+            <li key={t.code} className="rounded-xl p-3 bg-white/5 border border-white/10">
+              <div className="text-lg font-bold tabular-nums">{t.code}</div>
+              {t.name && <div className="text-xs opacity-80">{t.name}</div>}
             </li>
           ))}
-          {board.active.length === 0 && <li className="text-sm text-gray-500">Belum ada panggilan.</li>}
         </ul>
       </section>
-      <section className="p-4 rounded-2xl shadow bg-white/80">
-        <h3 className="font-bold mb-2">Next (QUEUED)</h3>
-        <ol className="space-y-2 list-decimal list-inside">
-          {board.next.map(t => (
-            <li key={t.id} className="flex items-center justify-between rounded-xl px-3 py-2 border">
-              <span className="font-medium">{t.code} — {t.name}</span>
-              <span className="text-xs text-gray-500">#{t.order}</span>
+
+      <section>
+        <h3 className="text-sm font-semibold">Next</h3>
+        <ul className="mt-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {board.next.map((t: Ticket) => (
+            <li key={t.code} className="rounded-xl p-3 bg-white/5 border border-white/10">
+              <div className="text-base font-bold tabular-nums">{t.code}</div>
             </li>
           ))}
-          {board.next.length === 0 && <li className="text-sm text-gray-500">Tidak ada antrean.</li>}
-        </ol>
+        </ul>
       </section>
     </div>
   );
