@@ -20,24 +20,21 @@ export function AdminToolbar({
   const doCallNext = async () => {
     try {
       setBusy(true);
-      // 1) Coba endpoint resmi BE
+      // coba endpoint BE
       await callNext(N);
       onSuccess?.();
       push(`Dipanggil ${N} nomor ke slot aktif`, "Sukses");
-      return;
-    } catch (e: unknown) {
-      // 2) Fallback: panggil dari NEXT list via callByCode
-      const pick = next.slice(0, N);
-      try {
+    } catch (err) {
+      // fallback: ambil N terdepan dari NEXT
+      const pick = (next || []).slice(0, N);
+      if (pick.length === 0) {
+        push("Tidak ada tiket NEXT untuk dipanggil", "Info");
+      } else {
         for (const t of pick) {
           await callByCode(t.code);
         }
         onSuccess?.();
         push(`Fallback: panggil ${pick.length} dari NEXT`, "Sukses");
-      } catch (e2: unknown) {
-        const msg =
-          e2 instanceof Error ? e2.message : "Fallback gagal memanggil NEXT";
-        push(msg, "Gagal");
       }
     } finally {
       setBusy(false);
@@ -53,10 +50,8 @@ export function AdminToolbar({
       setCode("");
       onSuccess?.();
       push(`Nomor ${c} dipanggil`, "Sukses");
-    } catch (e: unknown) {
-      const msg =
-        e instanceof Error ? e.message : `Gagal memanggil ${code.trim()}`;
-      push(msg, "Gagal");
+    } catch (err) {
+      push("Gagal memanggil nomor", "Error");
     } finally {
       setBusy(false);
     }
@@ -87,3 +82,4 @@ export function AdminToolbar({
     </div>
   );
 }
+
