@@ -1,141 +1,109 @@
-'use client';
-import { useState } from 'react';
-import BoardView from './BoardView';
-import { queueApi } from '@/lib/queueApi';
-import { useBoard } from '@/lib/useBoard';
+// src/components/AdminPanel.tsx — replace-full
+"use client";
+
+import React, { useState } from "react";
+import { useBoard } from "@/hooks/useBoard";
+import { AdminToolbar } from "@/components/AdminToolbar";
+import type { Ticket } from "@/lib/queueApi";
+import { setDone, setInProcess, setSkip } from "@/lib/queueApi";
 
 export default function AdminPanel() {
-  const { data, loading, err, refresh } = useBoard(1500);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  // Generic runner tanpa 'any'
-  async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
-    try {
-      setBusy(true);
-      setMsg(null);
-      const r = await fn();
-      setMsg('OK');
-      await refresh();
-      return r;
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : String(e));
-      return undefined;
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { data, loading, error, refresh } = useBoard("seed-event", 1600);
+  const [tab, setTab] = useState<"active" | "next">("active");
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          className="px-4 py-2 rounded-xl bg-blue-600 text-white disabled:opacity-50"
-          disabled={busy || loading}
-          onClick={() => void run(() => queueApi.callNext())}
-        >
-          Call Next
-        </button>
-
-        <input id="code" placeholder="AH-123" className="px-3 py-2 rounded border" />
-
-        <button
-          className="px-3 py-2 rounded-xl bg-indigo-600 text-white disabled:opacity-50"
-          disabled={busy || loading}
-          onClick={() => {
-            const code = (document.getElementById('code') as HTMLInputElement | null)?.value?.trim();
-            if (!code) {
-              setMsg('Masukkan code tiket.');
-              return;
-            }
-            void run(() => queueApi.call(code));
-          }}
-        >
-          Call by Code
-        </button>
-
-        {loading && <span className="text-sm text-gray-500">Refreshing…</span>}
-        {msg && <span className="text-sm text-gray-600">{msg}</span>}
-        {err && <span className="text-sm text-red-600">{err}</span>}
+    <div className="container-page">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h1 className="h1">Admin Panel — Ana Huang</h1>
+          <p className="subtle">Quick controls & queue overview</p>
+        </div>
+        <div className="inline-flex rounded-xl overflow-hidden border border-white/10">
+          <button
+            className={`px-3 py-1 text-sm ${tab === "active" ? "bg-white/10" : "bg-transparent"}`}
+            onClick={() => setTab("active")}
+          >
+            Active
+          </button>
+          <button
+            className={`px-3 py-1 text-sm ${tab === "next" ? "bg-white/10" : "bg-transparent"}`}
+            onClick={() => setTab("next")}
+          >
+            Next
+          </button>
+        </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <section className="p-4 rounded-2xl border bg-white/70">
-          <h3 className="font-bold mb-3">Active Tickets</h3>
-          <div className="space-y-3">
-            {data?.active.map((t) => (
-              <div key={t.id} className="p-3 rounded-xl border flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-semibold">
-                    {t.code}{' '}
-                    <span className="text-xs px-2 py-0.5 rounded bg-green-100">{t.status}</span>
+      <AdminToolbar onSuccess={refresh} />
+
+      {error && <div className="mt-3 text-sm text-rose-300">{error}</div>}
+
+      {tab === "active" ? (
+        <section className="mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {loading
+              ? Array.from({ length: 3 }).map((_, i: number) => (
+                  <div key={`sk-act-${i}`} className="rounded-2xl p-3 bg-white/5 border border-white/10">
+                    <div className="h-16 animate-pulse bg-white/5 rounded-xl" />
                   </div>
-                  <div className="text-xs text-gray-500">{t.name}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {t.status === 'CALLED' && (
-                    <button
-                      className="px-3 py-1 rounded bg-amber-500 text-white disabled:opacity-50"
-                      disabled={busy || loading}
-                      onClick={() => void run(() => queueApi.inProcess(t.code))}
-                    >
-                      In-Process
-                    </button>
-                  )}
-                  {(t.status === 'CALLED' || t.status === 'IN_PROCESS') && (
-                    <button
-                      className="px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-50"
-                      disabled={busy || loading}
-                      onClick={() => void run(() => queueApi.done(t.code))}
-                    >
-                      Done
-                    </button>
-                  )}
-                  {t.status === 'CALLED' && (
-                    <button
-                      className="px-3 py-1 rounded bg-gray-700 text-white disabled:opacity-50"
-                      disabled={busy || loading}
-                      onClick={() => void run(() => queueApi.skip(t.code))}
-                    >
-                      Skip
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {(!data || data.active.length === 0) && (
-              <div className="text-sm text-gray-500">Belum ada yang dipanggil.</div>
-            )}
+                ))
+              : data.active.map((t: Ticket) => (
+                  <div key={t.code} className="rounded-2xl p-3 bg-white/5 border border-white/10">
+                    <div className="flex items-center justify-between">
+                      <div className="text-2xl font-black tabular-nums">{t.code}</div>
+                      <div className="flex gap-2">
+                        <button
+                          className="btn-secondary"
+                          onClick={async () => {
+                            await setInProcess(t.code);
+                            await refresh();
+                          }}
+                        >
+                          In-Process
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          onClick={async () => {
+                            await setDone(t.code);
+                            await refresh();
+                          }}
+                        >
+                          Done
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          onClick={async () => {
+                            await setSkip(t.code);
+                            await refresh();
+                          }}
+                        >
+                          Skip
+                        </button>
+                      </div>
+                    </div>
+                    {t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
+                  </div>
+                ))}
           </div>
         </section>
-
-        <section className="p-4 rounded-2xl border bg-white/70">
-          <h3 className="font-bold mb-3">Next (Queue)</h3>
-          <div className="space-y-2">
-            {data?.next.map((t) => (
-              <div key={t.id} className="p-3 rounded-xl border flex items-center justify-between">
-                <div className="font-medium">
-                  {t.code} — {t.name}
-                </div>
-                <button
-                  className="px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50"
-                  disabled={busy || loading}
-                  onClick={() => void run(() => queueApi.call(t.code))}
-                >
-                  Call
-                </button>
-              </div>
-            ))}
-            {(!data || data.next.length === 0) && (
-              <div className="text-sm text-gray-500">Tidak ada antrean.</div>
-            )}
+      ) : (
+        <section className="mt-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            {loading
+              ? Array.from({ length: 6 }).map((_, i: number) => (
+                  <div key={`sk-next-${i}`} className="rounded-xl p-3 bg-white/5 border border-white/10">
+                    <div className="h-14 animate-pulse bg-white/5 rounded-lg" />
+                  </div>
+                ))
+              : data.next.map((t: Ticket) => (
+                  <div key={t.code} className="rounded-xl p-3 bg-white/5 border border-white/10">
+                    <div className="text-2xl font-black tabular-nums">{t.code}</div>
+                    {t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
+                  </div>
+                ))}
           </div>
         </section>
-      </div>
-
-      <div className="opacity-70">
-        <BoardView board={data ?? null} />
-      </div>
+      )}
     </div>
   );
 }

@@ -1,77 +1,77 @@
 "use client";
+import { useBoard } from "@/hooks/useBoard";
+import { setDone, setInProcess, setSkip } from "@/lib/queueApi";
+import type { Ticket } from "@/lib/queueApi";
+import { QueueCard } from "@/components/QueueCard";
+import { AdminToolbar } from "@/components/AdminToolbar";
 
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { toast } from "sonner";
-import { Play, SkipForward, RotateCcw } from "lucide-react";
 
-export default function AdminQueuePage() {
-  return (
-    <main
-      className="
-        min-h-dvh p-8
-        bg-gradient-to-b from-rose-50 via-pink-50 to-white
-        text-rose-900
-      "
-      style={{
-        backgroundImage:
-          "radial-gradient(40rem 25rem at 20% -10%, rgba(255,192,203,0.15), transparent 60%), radial-gradient(40rem 25rem at 80% -20%, rgba(186,230,253,0.2), transparent 60%)",
-        backgroundBlendMode: "screen, normal",
-      }}
-    >
-      <h1 className="text-3xl font-serif font-bold tracking-tight text-rose-800">
-        Admin — Queue Control
-      </h1>
+export default function AdminPage() {
+const { data, loading, error, refresh } = useBoard("seed-event", 1600);
 
-      <Card className="mt-6 p-4 bg-rose-50/70 border-rose-200">
-        <div className="flex flex-wrap gap-3">
-          <Button
-            className="bg-rose-600 hover:bg-rose-700"
-            onClick={() => toast.success("Call Next 5 (mock)")}
-          >
-            <Play className="mr-2 h-4 w-4" />
-            Call Next 5
-          </Button>
-          <Button
-            variant="secondary"
-            className="bg-rose-100 text-rose-900 hover:bg-rose-200"
-            onClick={() => toast.message("Skip Selected (mock)")}
-          >
-            <SkipForward className="mr-2 h-4 w-4" />
-            Skip Selected
-          </Button>
-          <Button
-            variant="outline"
-            className="border-rose-300 text-rose-800 hover:bg-rose-50"
-            onClick={() => toast.info("Recall Deferred (mock)")}
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Recall Deferred
-          </Button>
-        </div>
-      </Card>
 
-      <Card className="mt-6 border-rose-200 bg-rose-50/60">
-        <div className="px-4 py-3 text-sm text-rose-700/80 border-b border-rose-200">
-          Active Slots
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className="rounded-2xl border border-rose-200 bg-white/60 p-4"
-            >
-              <div className="text-3xl font-serif font-extrabold tabular-nums text-rose-800">
-                AH-{String(101 + i).padStart(3, "0")}
-              </div>
-              <div className="text-rose-700 mt-1">Nama Peserta {i + 1}</div>
-              <div className="text-xs uppercase tracking-wider text-rose-400 mt-1">
-                called
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </main>
-  );
+return (
+<div className="container-page">
+<header className="mb-2">
+<h1 className="h1">Admin Antrian — Ana Huang</h1>
+<p className="subtle">Mobile friendly controls for live queue</p>
+</header>
+
+
+<AdminToolbar onSuccess={refresh} />
+
+
+{error && <div className="mt-3 text-sm text-rose-300">{error}</div>}
+
+
+{/* ACTIVE SECTION */}
+<section className="mt-3">
+<h2 className="text-base font-semibold mb-2">Active</h2>
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+{loading
+? Array.from({ length: 3 }).map((_, i: number) => (
+<div key={`sk-act-${i}`} className="rounded-2xl p-3 bg-white/5 border border-white/10">
+<div className="h-16 animate-pulse bg-white/5 rounded-xl" />
+</div>
+))
+: data.active.map((t: Ticket) => (
+<div key={t.code} className="rounded-2xl p-3 bg-white/5 border border-white/10">
+<div className="flex items-center justify-between">
+<div className="text-2xl font-black tabular-nums">{t.code}</div>
+<div className="flex gap-2">
+<button className="btn-secondary" onClick={async () => { await setInProcess(t.code); await refresh(); }}>In-Process</button>
+<button className="btn-secondary" onClick={async () => { await setDone(t.code); await refresh(); }}>Done</button>
+<button className="btn-secondary" onClick={async () => { await setSkip(t.code); await refresh(); }}>Skip</button>
+</div>
+</div>
+{t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
+</div>
+))}
+</div>
+</section>
+
+
+{/* NEXT SECTION */}
+<section className="mt-6">
+<h2 className="text-base font-semibold mb-2">Next</h2>
+<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+{loading
+? Array.from({ length: 6 }).map((_, i: number) => (
+<div key={`sk-next-${i}`} className="rounded-xl p-3 bg-white/5 border border-white/10">
+<div className="h-14 animate-pulse bg-white/5 rounded-lg" />
+</div>
+))
+: data.next.map((t: Ticket) => (
+<div key={t.code} className="rounded-xl p-3 bg-white/5 border border-white/10">
+<QueueCard t={t} />
+</div>
+))}
+</div>
+</section>
+
+
+<footer className="mt-8 text-xs opacity-70">Dipersembahkan oleh Periplus • v-02102025</footer>
+</div>
+);
 }
+
