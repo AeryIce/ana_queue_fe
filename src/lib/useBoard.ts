@@ -1,38 +1,38 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { queueApi, type Board } from './queueApi';
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { BoardResponse } from "@/lib/queueApi";
+import { fetchBoard } from "@/lib/queueApi";
 
-export function useBoard(pollMs = 2000) {
-  const [data, setData] = useState<Board | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
 
-  const refresh = async (): Promise<void> => {
-    try {
-      const b = await queueApi.board();
-      setData(b);
-      setErr(null);
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  };
+export function useBoard(eventId = "seed-event", intervalMs = 1800) {
+const [data, setData] = useState<BoardResponse>({ active: [], next: [] });
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState<string | null>(null);
+const timer = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    let stop = false;
-    const tick = async () => {
-      if (!stop) {
-        await refresh();
-      }
-    };
-    void tick();
-    const id = setInterval(() => void tick(), pollMs);
-    return () => {
-      stop = true;
-      clearInterval(id);
-    };
-  }, [pollMs]);
 
-  return { data, loading, err, refresh };
+const load = useCallback(async () => {
+try {
+const r = await fetchBoard(eventId);
+setData(r);
+setError(null);
+} catch (e: unknown) {
+const msg = e instanceof Error ? e.message : "Error";
+setError(msg);
+} finally {
+setLoading(false);
+}
+}, [eventId]);
+
+
+useEffect(() => {
+void load();
+timer.current = setInterval(() => void load(), intervalMs);
+return () => {
+if (timer.current) clearInterval(timer.current);
+};
+}, [load, intervalMs]);
+
+
+return { data, loading, error, refresh: load };
 }

@@ -17,8 +17,9 @@ setBusy(true);
 await callNext(N);
 onSuccess?.();
 push(`Dipanggil ${N} nomor ke slot aktif`, "Sukses");
-} catch (e: any) {
-push(e?.message || "Gagal memanggil berikutnya", "Gagal");
+} catch (e: unknown) {
+const msg = e instanceof Error ? e.message : "Gagal memanggil berikutnya";
+push(msg, "Gagal");
 } finally {
 setBusy(false);
 }
@@ -33,8 +34,9 @@ await callByCode(code.trim());
 setCode("");
 onSuccess?.();
 push(`Nomor ${code.trim()} dipanggil`, "Sukses");
-} catch (e: any) {
-push(e?.message || `Gagal memanggil ${code.trim()}`, "Gagal");
+} catch (e: unknown) {
+const msg = e instanceof Error ? e.message : `Gagal memanggil ${code.trim()}`;
+push(msg, "Gagal");
 } finally {
 setBusy(false);
 }
@@ -60,4 +62,3 @@ className="input"
 </div>
 );
 }
-
