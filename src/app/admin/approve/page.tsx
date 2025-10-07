@@ -24,10 +24,22 @@ type Registrant = {
   isMasterMatch: boolean | null
   masterQuota: number | null
   issuedBefore: number | null
-  quotaRemaining: number // diturunkan FE dari service
+  quotaRemaining: number
   createdAt: string
   updatedAt?: string
 }
+
+type RegistrantsResponse = {
+  ok: boolean
+  items: Array<
+    Omit<Registrant, 'quotaRemaining'> & { quotaRemaining?: number | null }
+  >
+  total: number
+  limit: number
+  offset: number
+}
+
+type PoolResponse = { ok: boolean; poolRemaining?: number | null }
 
 function Toast({
   open,
@@ -80,11 +92,9 @@ export default function ApprovePage() {
   const [poolRemaining, setPoolRemaining] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // confirm dialog mini
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [useCount, setUseCount] = useState<number>(1)
 
-  // toast
   const [toastOpen, setToastOpen] = useState(false)
   const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info')
   const [toastMsg, setToastMsg] = useState<string>('')
@@ -98,9 +108,14 @@ export default function ApprovePage() {
   async function fetchPool() {
     try {
       const res = await fetch(`${API_BASE}/api/pool?eventId=${encodeURIComponent(eventId)}`)
-      const json = await res.json()
-      if (json?.ok) setPoolRemaining(json.poolRemaining ?? null)
-    } catch {}
+      const json: PoolResponse = await res.json()
+      if (json?.ok)
+        setPoolRemaining(
+          typeof json.poolRemaining === 'number' ? json.poolRemaining : null
+        )
+    } catch {
+      /* silent */
+    }
   }
 
   async function fetchData() {
@@ -116,18 +131,18 @@ export default function ApprovePage() {
       if (q.trim()) p.set('q', q.trim())
 
       const res = await fetch(`${API_BASE}/api/registrants?` + p.toString())
-      const json = await res.json()
+      const json: RegistrantsResponse = await res.json()
       if (json?.ok) {
-        const arr = (json.items || []) as any[]
-        const mapped: Registrant[] = arr.map((it) => ({
+        const mapped: Registrant[] = json.items.map((it) => ({
           ...it,
           quotaRemaining:
-            Math.max(0, Number(it.masterQuota ?? 0) - Number(it.issuedBefore ?? 0)) || 0,
+            it.quotaRemaining ??
+            Math.max(0, Number(it.masterQuota ?? 0) - Number(it.issuedBefore ?? 0)),
         }))
         setItems(mapped)
-        setTotal(json.total || 0)
-        setLimit(json.limit || 10)
-        setOffset(json.offset || 0)
+        setTotal(json.total ?? 0)
+        setLimit(json.limit ?? 10)
+        setOffset(json.offset ?? 0)
       }
     } finally {
       setLoading(false)
@@ -159,7 +174,7 @@ export default function ApprovePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestId: confirmId, useCount }),
       })
-      const json = await res.json()
+      const json: { ok?: boolean; error?: string; message?: string } = await res.json()
       if (json?.ok) {
         setToastType('success')
         setToastMsg('Berhasil dikonfirmasi. Tiket QUEUED dibuat.')
@@ -263,7 +278,9 @@ export default function ApprovePage() {
                     <td className="px-3 py-2">
                       <div className="font-medium text-[#7a0f2b]">{it.name}</div>
                       {it.wa && <div className="text-xs text-slate-500">{it.wa}</div>}
-                      <div className="text-[10px] text-slate-400">{new Date(it.createdAt).toLocaleString()}</div>
+                      <div className="text-[10px] text-slate-400">
+                        {new Date(it.createdAt).toLocaleString()}
+                      </div>
                     </td>
                     <td className="px-3 py-2 align-top">{it.email}</td>
                     <td className="px-3 py-2 align-top text-center">{it.source}</td>
@@ -328,7 +345,7 @@ export default function ApprovePage() {
         </div>
       </div>
 
-      {/* Confirm Dialog (simple) */}
+      {/* Confirm Dialog */}
       {confirmId && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-rose-100 bg-white p-5 shadow-xl">
@@ -362,7 +379,6 @@ export default function ApprovePage() {
         </div>
       )}
 
-      {/* Toast */}
       <Toast
         open={toastOpen}
         type={toastType}
