@@ -79,6 +79,11 @@ function Toast({
   )
 }
 
+// helper tampilan nomor: "AH-001" -> "AH001"
+function fmtCode(code: string) {
+  return code.replace('AH-', 'AH')
+}
+
 export default function ApprovePage() {
   const [items, setItems] = useState<Registrant[]>([])
   const [total, setTotal] = useState(0)
@@ -86,18 +91,26 @@ export default function ApprovePage() {
   const [offset, setOffset] = useState(0)
 
   const [status, setStatus] = useState<ReqStatus>('PENDING')
-  const [source, setSource] = useState<Source>('ALL')
+  // default MASTER sesuai kebutuhan Team A
+  const [source, setSource] = useState<Source>('MASTER')
   const [q, setQ] = useState('')
 
   const [poolRemaining, setPoolRemaining] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
 
+  // input useCount per-card (key: requestId)
+  const [counts, setCounts] = useState<Record<string, number>>({})
+
+  // modal confirm (fallback desktop, tapi di HP kita pakai tombol di card)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [useCount, setUseCount] = useState<number>(1)
 
   const [toastOpen, setToastOpen] = useState(false)
   const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info')
   const [toastMsg, setToastMsg] = useState<string>('')
+
+  // modal nomor antrean yang baru diterbitkan
+  const [issuedCodes, setIssuedCodes] = useState<string[] | null>(null)
 
   const eventId = useMemo(() => {
     if (typeof window === 'undefined') return EVENT_ID
@@ -118,7 +131,7 @@ export default function ApprovePage() {
     }
   }
 
-  async function fetchData() {
+  async function fetchData(opts?: { append?: boolean }) {
     if (!API_BASE || !eventId) return
     setLoading(true)
     try {
@@ -139,7 +152,7 @@ export default function ApprovePage() {
             it.quotaRemaining ??
             Math.max(0, Number(it.masterQuota ?? 0) - Number(it.issuedBefore ?? 0)),
         }))
-        setItems(mapped)
+        setItems((prev) => (opts?.append ? [...prev, ...mapped] : mapped))
         setTotal(json.total ?? 0)
         setLimit(json.limit ?? 10)
         setOffset(json.offset ?? 0)
@@ -153,7 +166,7 @@ export default function ApprovePage() {
     fetchData()
     fetchPool()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, source, limit, offset])
+  }, [status, source])
 
   function onSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -161,25 +174,44 @@ export default function ApprovePage() {
     fetchData()
   }
 
-  function openConfirm(id: string, defCount = 1) {
-    setConfirmId(id)
-    setUseCount(defCount)
+  function incCount(id: string, max?: number) {
+    setCounts((m) => {
+      const cur = m[id] ?? 1
+      const next = Math.max(1, Math.min((max ?? 9999), cur + 1))
+      return { ...m, [id]: next }
+    })
+  }
+  function decCount(id: string) {
+    setCounts((m) => {
+      const cur = m[id] ?? 1
+      const next = Math.max(1, cur - 1)
+      return { ...m, [id]: next }
+    })
   }
 
-  async function doConfirm() {
-    if (!confirmId) return
+  async function confirmOne(id: string, fallbackQuota?: number) {
+    const count = Math.max(1, counts[id] ?? 1)
     try {
       const res = await fetch(`${API_BASE}/api/register-confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId: confirmId, useCount }),
+        body: JSON.stringify({ requestId: id, useCount: count }),
       })
-      const json: { ok?: boolean; error?: string; message?: string } = await res.json()
+      const json: {
+        ok?: boolean
+        error?: string
+        message?: string
+        tickets?: { code: string }[]
+      } = await res.json()
       if (json?.ok) {
+        const codes =
+          Array.isArray(json.tickets) ? json.tickets.map((t) => t.code) : []
+        setIssuedCodes(codes.length ? codes : null)
+
         setToastType('success')
         setToastMsg('Berhasil dikonfirmasi. Tiket QUEUED dibuat.')
         setToastOpen(true)
-        setConfirmId(null)
+        // refresh list (tetap mempertahankan filter & search)
         await fetchData()
         await fetchPool()
       } else {
@@ -194,8 +226,38 @@ export default function ApprovePage() {
     }
   }
 
-  const maxPage = Math.max(1, Math.ceil(total / limit))
-  const page = Math.floor(offset / limit) + 1
+  // load more untuk mobile
+  async function loadMore() {
+    const nextOffset = offset + limit
+    const p = new URLSearchParams()
+    p.set('eventId', eventId)
+    p.set('status', status)
+    p.set('source', source)
+    p.set('limit', String(limit))
+    p.set('offset', String(nextOffset))
+    if (q.trim()) p.set('q', q.trim())
+
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/registrants?` + p.toString())
+      const json: RegistrantsResponse = await res.json()
+      if (json?.ok) {
+        const mapped: Registrant[] = json.items.map((it) => ({
+          ...it,
+          quotaRemaining:
+            it.quotaRemaining ??
+            Math.max(0, Number(it.masterQuota ?? 0) - Number(it.issuedBefore ?? 0)),
+        }))
+        setItems((prev) => [...prev, ...mapped])
+        setTotal(json.total ?? total)
+        setOffset(nextOffset)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const stillHasMore = items.length < total
 
   return (
     <main className="min-h-screen w-full bg-gradient-to-b from-[#fff6f3] to-white text-[#7a0f2b]">
@@ -214,8 +276,10 @@ export default function ApprovePage() {
             className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
             value={status}
             onChange={(e) => {
+              // reset list saat ganti filter
               setStatus(e.target.value as ReqStatus)
               setOffset(0)
+              setItems([])
             }}
           >
             <option value="PENDING">PENDING</option>
@@ -230,15 +294,24 @@ export default function ApprovePage() {
             onChange={(e) => {
               setSource(e.target.value as Source)
               setOffset(0)
+              setItems([])
             }}
           >
-            <option value="ALL">ALL SOURCE</option>
             <option value="MASTER">MASTER</option>
+            <option value="ALL">ALL SOURCE</option>
             <option value="WALKIN">WALKIN</option>
             <option value="GIMMICK">GIMMICK</option>
           </select>
 
-          <form onSubmit={onSearch} className="flex w-full gap-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              setOffset(0)
+              setItems([])
+              fetchData()
+            }}
+            className="flex w-full gap-2"
+          >
             <input
               className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
               placeholder="Cari email/nama/wa…"
@@ -251,101 +324,119 @@ export default function ApprovePage() {
           </form>
         </div>
 
-        {/* Table */}
-        <div className="overflow-hidden rounded-2xl border border-rose-100 bg-white shadow-sm">
-          <div className="max-h-[65vh] overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead className="sticky top-0 bg-rose-50 text-rose-900/80">
-                <tr>
-                  <th className="px-3 py-2 text-left">Nama</th>
-                  <th className="px-3 py-2 text-left">Email</th>
-                  <th className="px-3 py-2">Source</th>
-                  <th className="px-3 py-2">Quota</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 && (
-                  <tr>
-                    <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>
-                      {loading ? 'Memuat…' : 'Tidak ada data'}
-                    </td>
-                  </tr>
-                )}
-                {items.map((it) => (
-                  <tr key={it.id} className="border-t border-rose-50">
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-[#7a0f2b]">{it.name}</div>
-                      {it.wa && <div className="text-xs text-slate-500">{it.wa}</div>}
-                      <div className="text-[10px] text-slate-400">
-                        {new Date(it.createdAt).toLocaleString()}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 align-top">{it.email}</td>
-                    <td className="px-3 py-2 align-top text-center">{it.source}</td>
-                    <td className="px-3 py-2 align-top text-center">
-                      {it.source === 'MASTER' ? it.quotaRemaining : '—'}
-                    </td>
-                    <td className="px-3 py-2 align-top text-center">{it.status}</td>
-                    <td className="px-3 py-2 align-top text-right">
-                      {it.status === 'PENDING' ? (
-                        <button
-                          className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:opacity-95"
-                          onClick={() => openConfirm(it.id, 1)}
-                        >
-                          Confirm
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {/* Cards (mobile-first) */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {items.length === 0 && !loading && (
+            <div className="col-span-full rounded-2xl border border-rose-100 bg-white p-6 text-center text-sm text-slate-500">
+              Tidak ada data
+            </div>
+          )}
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between border-t border-rose-100 px-3 py-2 text-xs">
-            <div>
-              Total: <b>{total}</b> • Page {page}/{maxPage}
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                className="rounded-lg border px-2 py-1 disabled:opacity-40"
-                disabled={page <= 1}
-                onClick={() => setOffset(Math.max(0, offset - limit))}
+          {items.map((it) => {
+            const def = Math.max(1, Math.min( it.source === 'MASTER' ? (it.quotaRemaining || 1) : 1, counts[it.id] ?? 1 ))
+            const isPending = it.status === 'PENDING'
+            return (
+              <div
+                key={it.id}
+                className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm"
               >
-                ‹ Prev
-              </button>
-              <select
-                className="rounded-lg border px-2 py-1"
-                value={limit}
-                onChange={(e) => {
-                  setLimit(Number(e.target.value))
-                  setOffset(0)
-                }}
-              >
-                {[10, 20, 50, 100].map((n) => (
-                  <option key={n} value={n}>
-                    {n}/page
-                  </option>
-                ))}
-              </select>
-              <button
-                className="rounded-lg border px-2 py-1 disabled:opacity-40"
-                disabled={page >= maxPage}
-                onClick={() => setOffset(offset + limit)}
-              >
-                Next ›
-              </button>
-            </div>
-          </div>
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[#7a0f2b]">{it.name}</div>
+                    <div className="text-xs text-slate-500">{it.email}</div>
+                    {it.wa && (
+                      <div className="text-[11px] text-slate-400">WA: {it.wa}</div>
+                    )}
+                  </div>
+                  <span className="rounded-lg border border-rose-200 bg-rose-50/60 px-2 py-1 text-[11px]">
+                    {it.source}
+                  </span>
+                </div>
+
+                <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
+                  <div>
+                    Dibuat:{' '}
+                    <b className="text-slate-700">
+                      {new Date(it.createdAt).toLocaleString()}
+                    </b>
+                  </div>
+                  <div>Status: <b className="text-slate-700">{it.status}</b></div>
+                </div>
+
+                {/* Quota & useCount row */}
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-xs text-slate-600">
+                    Quota MASTER:{' '}
+                    <b>{it.source === 'MASTER' ? it.quotaRemaining : '—'}</b>
+                  </div>
+
+                  {/* stepper useCount */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
+                      onClick={() => decCount(it.id)}
+                      disabled={!isPending}
+                    >
+                      –
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={def}
+                      onChange={(e) =>
+                        setCounts((m) => ({
+                          ...m,
+                          [it.id]: Math.max(1, Number(e.target.value || 1)),
+                        }))
+                      }
+                      className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
+                      disabled={!isPending}
+                    />
+                    <button
+                      type="button"
+                      className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
+                      onClick={() => incCount(it.id, it.source === 'MASTER' ? it.quotaRemaining ?? undefined : 9999)}
+                      disabled={!isPending}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2">
+                  {isPending ? (
+                    <button
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-95"
+                      onClick={() => confirmOne(it.id)}
+                    >
+                      Confirm
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-slate-400">Sudah diproses</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
+
+        {/* Load more */}
+        {stillHasMore && (
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={loadMore}
+              className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm"
+              disabled={loading}
+            >
+              {loading ? 'Memuat…' : 'Load more'}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Confirm Dialog */}
+      {/* (fallback) Confirm Dialog manual – tetap dipertahankan kalau butuh di desktop */}
       {confirmId && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-rose-100 bg-white p-5 shadow-xl">
@@ -370,9 +461,53 @@ export default function ApprovePage() {
               </button>
               <button
                 className="rounded-xl bg-[#7a0f2b] px-3 py-2 text-sm font-semibold text-white"
-                onClick={doConfirm}
+                onClick={() => {
+                  if (!confirmId) return
+                  setCounts((m) => ({ ...m, [confirmId]: useCount }))
+                  confirmOne(confirmId)
+                  setConfirmId(null)
+                }}
               >
                 Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nomor Antrean setelah Confirm */}
+      {issuedCodes && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-rose-100 bg-white p-6 shadow-xl">
+            <h3 className="mb-3 text-base font-bold">Nomor Antrean</h3>
+            <div className="grid grid-cols-3 gap-2">
+              {issuedCodes.map((c) => (
+                <div
+                  key={c}
+                  className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-center font-semibold text-[#7a0f2b]"
+                >
+                  {fmtCode(c)}
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-xl border px-3 py-2 text-sm"
+                onClick={() => {
+                  try {
+                    void navigator.clipboard?.writeText(issuedCodes.join(', '))
+                  } catch {
+                    /* noop */
+                  }
+                }}
+              >
+                Salin
+              </button>
+              <button
+                className="rounded-xl bg-[#7a0f2b] px-3 py-2 text-sm font-semibold text-white"
+                onClick={() => setIssuedCodes(null)}
+              >
+                Done
               </button>
             </div>
           </div>
