@@ -66,16 +66,21 @@ function Toast({
   )
 }
 
-/** Catatan promo — disisipkan di semua toast */
-function PromoNote() {
+/** Banner promo (gambar) untuk disisipkan di toast */
+function PromoBanner({ href }: { href: string }) {
   return (
-    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-[12px] leading-5 text-emerald-900">
-      <div className="mb-1 font-semibold">Promo khusus di SBO:</div>
-      <ul className="list-disc space-y-0.5 pl-4">
-        <li>Pembelian 3–5 buku: <b>diskon 10%</b></li>
-        <li>Pembelian 6 buku atau lebih: <b>diskon 20%</b></li>
-      </ul>
-    </div>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-3 block"
+    >
+      <img
+        src="/brand/promosbo.png"
+        alt="Promo khusus di Periplus Setiabudhi One"
+        className="w-full rounded-xl border border-amber-200 shadow-sm"
+      />
+    </a>
   )
 }
 
@@ -191,7 +196,9 @@ export default function RegisterPage() {
     if (!API_BASE || !eventId) return []
     try {
       const res = await fetch(
-        `${API_BASE}/api/tickets?eventId=${encodeURIComponent(eventId)}&status=ALL&email=${encodeURIComponent(emailAddr)}`
+        `${API_BASE}/api/tickets?eventId=${encodeURIComponent(
+          eventId,
+        )}&status=ALL&email=${encodeURIComponent(emailAddr)}`,
       )
       const json: { ok?: boolean; items?: Array<{ code: string }> } = await res.json()
       if (json?.ok) {
@@ -204,7 +211,10 @@ export default function RegisterPage() {
     return []
   }
 
-  function openToast(node: React.ReactNode, type: 'info' | 'success' | 'error' = 'info') {
+  function openToast(
+    node: React.ReactNode,
+    type: 'info' | 'success' | 'error' = 'info',
+  ) {
     setToastType(type)
     setToastBody(node)
     setToastOpen(true)
@@ -254,30 +264,48 @@ export default function RegisterPage() {
                   </div>
                 )}
                 <div className="mt-3 flex flex-col gap-2">
-                  <a href={RUN_URL} className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white">
+                  <a
+                    href={RUN_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
+                  >
                     Cek Running Queue
                   </a>
-                  <a href={periplusUrl('master')} className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs">
+                  <a
+                    href={periplusUrl('master')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+                  >
                     Belanja buku di Periplus
                   </a>
                 </div>
-                <PromoNote />
+                <PromoBanner href={periplusUrl('master')} />
               </div>,
-              'success'
+              'success',
             )
           } else {
+            // WALKIN yang sudah pernah dipakai
             openToast(
               <div>
                 <div className="font-semibold">Terima kasih! Email kamu sudah digunakan.</div>
-                <div className="mt-1 text-slate-600">Panitia akan mengarahkanmu sesuai ketersediaan slot.</div>
+                <div className="mt-1 text-slate-600">
+                  Panitia akan mengarahkanmu sesuai ketersediaan slot.
+                </div>
                 <div className="mt-3">
-                  <a href={periplusUrl('walkin')} className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs">
+                  <a
+                    href={periplusUrl('walkin')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+                  >
                     Belanja buku di Periplus
                   </a>
                 </div>
-                <PromoNote />
+                <PromoBanner href={periplusUrl('walkin')} />
               </div>,
-              'info'
+              'info',
             )
           }
           setSubmitting(false)
@@ -288,18 +316,26 @@ export default function RegisterPage() {
         if (json.dedup === true) {
           openToast(
             <div>
-              <div className="font-semibold">Terima kasih! Email ini sudah digunakan untuk pendaftaran.</div>
+              <div className="font-semibold">
+                Terima kasih! Email ini sudah digunakan untuk pendaftaran.
+              </div>
               <div className="mt-1 text-slate-600">
-                Permintaanmu <b>sudah ada di daftar tunggu</b> dan menunggu konfirmasi panitia.
+                Permintaanmu <b>sudah ada di daftar tunggu</b> dan menunggu konfirmasi
+                panitia.
               </div>
               <div className="mt-3">
-                <a href={periplusUrl('pending')} className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs">
+                <a
+                  href={periplusUrl('pending')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+                >
                   Belanja buku di Periplus
                 </a>
               </div>
-              <PromoNote />
+              <PromoBanner href={periplusUrl('pending')} />
             </div>,
-            'info'
+            'info',
           )
           setSubmitting(false)
           return
@@ -309,21 +345,28 @@ export default function RegisterPage() {
         if (!json.dedup && stat === 'PENDING') {
           openToast(
             <div>
-              <div className="font-semibold">Terima kasih! Permintaan registrasimu sudah kami terima.</div>
+              <div className="font-semibold">
+                Terima kasih! Permintaan registrasimu sudah kami terima.
+              </div>
               <div className="mt-1 text-slate-600">
                 Panitia akan memverifikasi sesuai ketersediaan slot.
               </div>
-              <PromoNote />
+              <PromoBanner href={periplusUrl('pending')} />
             </div>,
-            'success'
+            'success',
           )
-          setEmail(''); setName(''); setWa('')
+          setEmail('')
+          setName('')
+          setWa('')
           setSubmitting(false)
           return
         }
       }
 
-      openToast(<div>{json?.error || json?.message || 'Gagal memproses pendaftaran.'}</div>, 'error')
+      openToast(
+        <div>{json?.error || json?.message || 'Gagal memproses pendaftaran.'}</div>,
+        'error',
+      )
     } catch {
       openToast(<div>Gagal menghubungi server.</div>, 'error')
     } finally {
