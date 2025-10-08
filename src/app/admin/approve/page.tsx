@@ -2,11 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 
-/**
- * ENV:
- * NEXT_PUBLIC_QUEUE_API
- * NEXT_PUBLIC_EVENT_ID
- */
 const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || ''
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || ''
 
@@ -79,10 +74,7 @@ function Toast({
   )
 }
 
-// helper tampilan nomor: "AH-001" -> "AH001"
-function fmtCode(code: string) {
-  return code.replace('AH-', 'AH')
-}
+function fmtCode(code: string) { return code.replace('AH-', 'AH') }
 
 export default function ApprovePage() {
   const [items, setItems] = useState<Registrant[]>([])
@@ -91,17 +83,16 @@ export default function ApprovePage() {
   const [offset, setOffset] = useState(0)
 
   const [status, setStatus] = useState<ReqStatus>('PENDING')
-  // default MASTER sesuai kebutuhan Team A
-  const [source, setSource] = useState<Source>('MASTER')
+  const [source, setSource] = useState<Source>('MASTER') // default MASTER
   const [q, setQ] = useState('')
 
   const [poolRemaining, setPoolRemaining] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // input useCount per-card (key: requestId)
+  // input useCount per-card
   const [counts, setCounts] = useState<Record<string, number>>({})
 
-  // modal confirm (fallback desktop, tapi di HP kita pakai tombol di card)
+  // fallback dialog (desktop)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [useCount, setUseCount] = useState<number>(1)
 
@@ -109,7 +100,6 @@ export default function ApprovePage() {
   const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info')
   const [toastMsg, setToastMsg] = useState<string>('')
 
-  // modal nomor antrean yang baru diterbitkan
   const [issuedCodes, setIssuedCodes] = useState<string[] | null>(null)
 
   const eventId = useMemo(() => {
@@ -122,13 +112,8 @@ export default function ApprovePage() {
     try {
       const res = await fetch(`${API_BASE}/api/pool?eventId=${encodeURIComponent(eventId)}`)
       const json: PoolResponse = await res.json()
-      if (json?.ok)
-        setPoolRemaining(
-          typeof json.poolRemaining === 'number' ? json.poolRemaining : null
-        )
-    } catch {
-      /* silent */
-    }
+      if (json?.ok) setPoolRemaining(typeof json.poolRemaining === 'number' ? json.poolRemaining : null)
+    } catch {}
   }
 
   async function fetchData(opts?: { append?: boolean }) {
@@ -148,9 +133,7 @@ export default function ApprovePage() {
       if (json?.ok) {
         const mapped: Registrant[] = json.items.map((it) => ({
           ...it,
-          quotaRemaining:
-            it.quotaRemaining ??
-            Math.max(0, Number(it.masterQuota ?? 0) - Number(it.issuedBefore ?? 0)),
+          quotaRemaining: it.quotaRemaining ?? Math.max(0, Number(it.masterQuota ?? 0) - Number(it.issuedBefore ?? 0)),
         }))
         setItems((prev) => (opts?.append ? [...prev, ...mapped] : mapped))
         setTotal(json.total ?? 0)
@@ -168,50 +151,41 @@ export default function ApprovePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, source])
 
-  function onSearch(e: React.FormEvent) {
-    e.preventDefault()
-    setOffset(0)
-    fetchData()
-  }
-
   function incCount(id: string, max?: number) {
     setCounts((m) => {
       const cur = m[id] ?? 1
-      const next = Math.max(1, Math.min((max ?? 9999), cur + 1))
+      const next = Math.max(0, Math.min((max ?? 9999), cur + 1))
       return { ...m, [id]: next }
     })
   }
   function decCount(id: string) {
     setCounts((m) => {
       const cur = m[id] ?? 1
-      const next = Math.max(1, cur - 1)
+      const next = Math.max(0, cur - 1)
       return { ...m, [id]: next }
     })
   }
 
-  async function confirmOne(id: string, fallbackQuota?: number) {
-    const count = Math.max(1, counts[id] ?? 1)
+  async function confirmOne(id: string) {
+    const count = Math.max(0, counts[id] ?? 1) // ← boleh 0
     try {
       const res = await fetch(`${API_BASE}/api/register-confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestId: id, useCount: count }),
       })
-      const json: {
-        ok?: boolean
-        error?: string
-        message?: string
-        tickets?: { code: string }[]
-      } = await res.json()
+      const json: { ok?: boolean; error?: string; message?: string; tickets?: { code: string }[] } = await res.json()
       if (json?.ok) {
-        const codes =
-          Array.isArray(json.tickets) ? json.tickets.map((t) => t.code) : []
-        setIssuedCodes(codes.length ? codes : null)
-
-        setToastType('success')
-        setToastMsg('Berhasil dikonfirmasi. Tiket QUEUED dibuat.')
-        setToastOpen(true)
-        // refresh list (tetap mempertahankan filter & search)
+        const codes = Array.isArray(json.tickets) ? json.tickets.map((t) => t.code) : []
+        if (codes.length > 0) {
+          setIssuedCodes(codes)
+        } else {
+          // donasi semua (tanpa tiket)
+          setIssuedCodes(null)
+          setToastType('success')
+          setToastMsg('Konfirmasi dicatat. Kuota didonasikan (tanpa tiket).')
+          setToastOpen(true)
+        }
         await fetchData()
         await fetchPool()
       } else {
@@ -226,7 +200,6 @@ export default function ApprovePage() {
     }
   }
 
-  // load more untuk mobile
   async function loadMore() {
     const nextOffset = offset + limit
     const p = new URLSearchParams()
@@ -244,9 +217,7 @@ export default function ApprovePage() {
       if (json?.ok) {
         const mapped: Registrant[] = json.items.map((it) => ({
           ...it,
-          quotaRemaining:
-            it.quotaRemaining ??
-            Math.max(0, Number(it.masterQuota ?? 0) - Number(it.issuedBefore ?? 0)),
+          quotaRemaining: it.quotaRemaining ?? Math.max(0, Number(it.masterQuota ?? 0) - Number(it.issuedBefore ?? 0)),
         }))
         setItems((prev) => [...prev, ...mapped])
         setTotal(json.total ?? total)
@@ -275,12 +246,7 @@ export default function ApprovePage() {
           <select
             className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
             value={status}
-            onChange={(e) => {
-              // reset list saat ganti filter
-              setStatus(e.target.value as ReqStatus)
-              setOffset(0)
-              setItems([])
-            }}
+            onChange={(e) => { setStatus(e.target.value as ReqStatus); setOffset(0); setItems([]) }}
           >
             <option value="PENDING">PENDING</option>
             <option value="CONFIRMED">CONFIRMED</option>
@@ -291,11 +257,7 @@ export default function ApprovePage() {
           <select
             className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
             value={source}
-            onChange={(e) => {
-              setSource(e.target.value as Source)
-              setOffset(0)
-              setItems([])
-            }}
+            onChange={(e) => { setSource(e.target.value as Source); setOffset(0); setItems([]) }}
           >
             <option value="MASTER">MASTER</option>
             <option value="ALL">ALL SOURCE</option>
@@ -303,15 +265,7 @@ export default function ApprovePage() {
             <option value="GIMMICK">GIMMICK</option>
           </select>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              setOffset(0)
-              setItems([])
-              fetchData()
-            }}
-            className="flex w-full gap-2"
-          >
+          <form onSubmit={(e) => { e.preventDefault(); setOffset(0); setItems([]); fetchData() }} className="flex w-full gap-2">
             <input
               className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
               placeholder="Cari email/nama/wa…"
@@ -324,7 +278,7 @@ export default function ApprovePage() {
           </form>
         </div>
 
-        {/* Cards (mobile-first) */}
+        {/* Cards */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {items.length === 0 && !loading && (
             <div className="col-span-full rounded-2xl border border-rose-100 bg-white p-6 text-center text-sm text-slate-500">
@@ -333,64 +287,36 @@ export default function ApprovePage() {
           )}
 
           {items.map((it) => {
-            const def = Math.max(1, Math.min( it.source === 'MASTER' ? (it.quotaRemaining || 1) : 1, counts[it.id] ?? 1 ))
+            const def = Math.max(0, Math.min(it.source === 'MASTER' ? (it.quotaRemaining || 0) : 0, counts[it.id] ?? 1))
             const isPending = it.status === 'PENDING'
             return (
-              <div
-                key={it.id}
-                className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm"
-              >
+              <div key={it.id} className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm">
                 <div className="mb-2 flex items-start justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-[#7a0f2b]">{it.name}</div>
                     <div className="text-xs text-slate-500">{it.email}</div>
-                    {it.wa && (
-                      <div className="text-[11px] text-slate-400">WA: {it.wa}</div>
-                    )}
+                    {it.wa && <div className="text-[11px] text-slate-400">WA: {it.wa}</div>}
                   </div>
-                  <span className="rounded-lg border border-rose-200 bg-rose-50/60 px-2 py-1 text-[11px]">
-                    {it.source}
-                  </span>
+                  <span className="rounded-lg border border-rose-200 bg-rose-50/60 px-2 py-1 text-[11px]">{it.source}</span>
                 </div>
 
                 <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
-                  <div>
-                    Dibuat:{' '}
-                    <b className="text-slate-700">
-                      {new Date(it.createdAt).toLocaleString()}
-                    </b>
-                  </div>
+                  <div> Dibuat: <b className="text-slate-700">{new Date(it.createdAt).toLocaleString()}</b></div>
                   <div>Status: <b className="text-slate-700">{it.status}</b></div>
                 </div>
 
-                {/* Quota & useCount row */}
                 <div className="mb-3 flex items-center justify-between">
                   <div className="text-xs text-slate-600">
-                    Quota MASTER:{' '}
-                    <b>{it.source === 'MASTER' ? it.quotaRemaining : '—'}</b>
+                    Quota MASTER: <b>{it.source === 'MASTER' ? it.quotaRemaining : '—'}</b>
                   </div>
-
-                  {/* stepper useCount */}
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() => decCount(it.id)}
-                      disabled={!isPending}
-                    >
-                      –
-                    </button>
+                    <button type="button" className="h-8 w-8 rounded-lg border border-rose-200 text-sm" onClick={() => decCount(it.id)} disabled={!isPending}>–</button>
                     <input
                       type="number"
-                      min={1}
+                      min={0}
                       step={1}
                       value={def}
-                      onChange={(e) =>
-                        setCounts((m) => ({
-                          ...m,
-                          [it.id]: Math.max(1, Number(e.target.value || 1)),
-                        }))
-                      }
+                      onChange={(e) => setCounts((m) => ({ ...m, [it.id]: Math.max(0, Number(e.target.value || 0)) }))}
                       className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
                       disabled={!isPending}
                     />
@@ -399,9 +325,7 @@ export default function ApprovePage() {
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
                       onClick={() => incCount(it.id, it.source === 'MASTER' ? it.quotaRemaining ?? undefined : 9999)}
                       disabled={!isPending}
-                    >
-                      +
-                    </button>
+                    >+</button>
                   </div>
                 </div>
 
@@ -422,91 +346,57 @@ export default function ApprovePage() {
           })}
         </div>
 
-        {/* Load more */}
-        {stillHasMore && (
+        {items.length < total && (
           <div className="mt-4 flex justify-center">
-            <button
-              onClick={loadMore}
-              className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm"
-              disabled={loading}
-            >
+            <button onClick={loadMore} className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm" disabled={loading}>
               {loading ? 'Memuat…' : 'Load more'}
             </button>
           </div>
         )}
       </div>
 
-      {/* (fallback) Confirm Dialog manual – tetap dipertahankan kalau butuh di desktop */}
+      {/* Fallback dialog (desktop) */}
       {confirmId && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-rose-100 bg-white p-5 shadow-xl">
             <h3 className="mb-2 text-base font-bold">Konfirmasi Registrasi</h3>
-            <p className="mb-3 text-sm text-slate-600">
-              Tentukan jumlah slot yang dipakai (<code>useCount</code>).
-            </p>
+            <p className="mb-3 text-sm text-slate-600">Tentukan jumlah slot yang dipakai (<code>useCount</code>).</p>
             <input
               type="number"
-              min={1}
+              min={0}
               step={1}
               value={useCount}
-              onChange={(e) => setUseCount(Math.max(1, Number(e.target.value || 1)))}
+              onChange={(e) => setUseCount(Math.max(0, Number(e.target.value || 0)))}
               className="mb-4 w-full rounded-xl border border-rose-200 px-3 py-2 text-sm"
             />
             <div className="flex justify-end gap-2">
-              <button
-                className="rounded-xl border px-3 py-2 text-sm"
-                onClick={() => setConfirmId(null)}
-              >
-                Batal
-              </button>
+              <button className="rounded-xl border px-3 py-2 text-sm" onClick={() => setConfirmId(null)}>Batal</button>
               <button
                 className="rounded-xl bg-[#7a0f2b] px-3 py-2 text-sm font-semibold text-white"
-                onClick={() => {
-                  if (!confirmId) return
-                  setCounts((m) => ({ ...m, [confirmId]: useCount }))
-                  confirmOne(confirmId)
-                  setConfirmId(null)
-                }}
-              >
-                Confirm
-              </button>
+                onClick={() => { if (!confirmId) return; confirmOne(confirmId); setConfirmId(null) }}
+              >Confirm</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Nomor Antrean setelah Confirm */}
+      {/* Modal Nomor Antrean */}
       {issuedCodes && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-rose-100 bg-white p-6 shadow-xl">
             <h3 className="mb-3 text-base font-bold">Nomor Antrean</h3>
             <div className="grid grid-cols-3 gap-2">
               {issuedCodes.map((c) => (
-                <div
-                  key={c}
-                  className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-center font-semibold text-[#7a0f2b]"
-                >
+                <div key={c} className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-center font-semibold text-[#7a0f2b]">
                   {fmtCode(c)}
                 </div>
               ))}
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="rounded-xl border px-3 py-2 text-sm"
-                onClick={() => {
-                  try {
-                    void navigator.clipboard?.writeText(issuedCodes.join(', '))
-                  } catch {
-                    /* noop */
-                  }
-                }}
-              >
+              <button className="rounded-xl border px-3 py-2 text-sm" onClick={() => { try { void navigator.clipboard?.writeText(issuedCodes.join(', ')) } catch {} }}>
                 Salin
               </button>
-              <button
-                className="rounded-xl bg-[#7a0f2b] px-3 py-2 text-sm font-semibold text-white"
-                onClick={() => setIssuedCodes(null)}
-              >
+              <button className="rounded-xl bg-[#7a0f2b] px-3 py-2 text-sm font-semibold text-white" onClick={() => setIssuedCodes(null)}>
                 Done
               </button>
             </div>
@@ -514,12 +404,7 @@ export default function ApprovePage() {
         </div>
       )}
 
-      <Toast
-        open={toastOpen}
-        type={toastType}
-        message={toastMsg}
-        onClose={() => setToastOpen(false)}
-      />
+      <Toast open={toastOpen} type={toastType} message={toastMsg} onClose={() => setToastOpen(false)} />
     </main>
   )
 }
