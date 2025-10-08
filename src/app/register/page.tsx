@@ -5,8 +5,8 @@ import React, { useMemo, useState } from 'react'
 const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || ''
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || ''
 
-type Source = 'MASTER'|'WALKIN'|'GIMMICK'
-type ReqStatus = 'PENDING'|'CONFIRMED'|'CANCELLED'
+type Source = 'MASTER' | 'WALKIN' | 'GIMMICK'
+type ReqStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED'
 type ReqResp = {
   ok?: boolean
   dedup?: boolean
@@ -135,7 +135,9 @@ function Hero() {
             </p>
           </div>
           <SponsorStrip />
-          <div className="hidden md:block"><FeaturedBooks /></div>
+          <div className="hidden md:block">
+            <FeaturedBooks />
+          </div>
         </div>
 
         <div className="flex items-center justify-center">
@@ -147,7 +149,9 @@ function Hero() {
         </div>
       </div>
 
-      <div className="mt-4 md:hidden"><FeaturedBooks /></div>
+      <div className="mt-4 md:hidden">
+        <FeaturedBooks />
+      </div>
     </section>
   )
 }
@@ -187,9 +191,7 @@ export default function RegisterPage() {
     if (!API_BASE || !eventId) return []
     try {
       const res = await fetch(
-        `${API_BASE}/api/tickets?eventId=${encodeURIComponent(
-          eventId,
-        )}&status=ALL&email=${encodeURIComponent(emailAddr)}`,
+        `${API_BASE}/api/tickets?eventId=${encodeURIComponent(eventId)}&status=ALL&email=${encodeURIComponent(emailAddr)}`
       )
       const json: { ok?: boolean; items?: Array<{ code: string }> } = await res.json()
       if (json?.ok) {
@@ -202,10 +204,7 @@ export default function RegisterPage() {
     return []
   }
 
-  function openToast(
-    node: React.ReactNode,
-    type: 'info' | 'success' | 'error' = 'info',
-  ) {
+  function openToast(node: React.ReactNode, type: 'info' | 'success' | 'error' = 'info') {
     setToastType(type)
     setToastBody(node)
     setToastOpen(true)
@@ -214,8 +213,8 @@ export default function RegisterPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!email.trim() || !name.trim()) return
-
     setSubmitting(true)
+
     try {
       const res = await fetch(`${API_BASE}/api/register-request`, {
         method: 'POST',
@@ -255,50 +254,38 @@ export default function RegisterPage() {
                   </div>
                 )}
                 <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={RUN_URL}
-                    className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
-                  >
+                  <a href={RUN_URL} className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white">
                     Cek Running Queue
                   </a>
-                  <a
-                    href={periplusUrl('master')}
-                    className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
-                  >
+                  <a href={periplusUrl('master')} className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs">
                     Belanja buku di Periplus
                   </a>
                 </div>
                 <PromoNote />
               </div>,
-              'success',
+              'success'
             )
           } else {
-            // WALKIN yang sudah pernah dipakai
             openToast(
               <div>
                 <div className="font-semibold">Terima kasih! Email kamu sudah digunakan.</div>
-                <div className="mt-1 text-slate-600">
-                  Panitia akan mengarahkanmu sesuai ketersediaan slot.
-                </div>
+                <div className="mt-1 text-slate-600">Panitia akan mengarahkanmu sesuai ketersediaan slot.</div>
                 <div className="mt-3">
-                  <a
-                    href={periplusUrl('walkin')}
-                    className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
-                  >
+                  <a href={periplusUrl('walkin')} className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs">
                     Belanja buku di Periplus
                   </a>
                 </div>
                 <PromoNote />
               </div>,
-              'info',
+              'info'
             )
           }
           setSubmitting(false)
           return
         }
 
-        // 2) Masih PENDING (dedup) → penolakan sopan
-        if (json.dedup || stat === 'PENDING') {
+        // 2) Sudah pernah request dan masih pending (dedup true)
+        if (json.dedup === true) {
           openToast(
             <div>
               <div className="font-semibold">Terima kasih! Email ini sudah digunakan untuk pendaftaran.</div>
@@ -306,42 +293,37 @@ export default function RegisterPage() {
                 Permintaanmu <b>sudah ada di daftar tunggu</b> dan menunggu konfirmasi panitia.
               </div>
               <div className="mt-3">
-                <a
-                  href={periplusUrl('pending')}
-                  className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
-                >
+                <a href={periplusUrl('pending')} className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs">
                   Belanja buku di Periplus
                 </a>
               </div>
               <PromoNote />
             </div>,
-            'info',
+            'info'
           )
           setSubmitting(false)
           return
         }
 
-        // 3) Baru dibuat PENDING (pertama kali)
-        openToast(
-          <div>
-            <div className="font-semibold">Terima kasih! Permintaan registrasimu sudah kami terima.</div>
-            <div className="mt-1 text-slate-600">
-              Panitia akan memverifikasi sesuai ketersediaan slot.
-            </div>
-            <PromoNote />
-          </div>,
-          'success',
-        )
-        setEmail(''); setName(''); setWa('')
-        setSubmitting(false)
-        return
+        // 3) Baru daftar pertama kali → pending baru
+        if (!json.dedup && stat === 'PENDING') {
+          openToast(
+            <div>
+              <div className="font-semibold">Terima kasih! Permintaan registrasimu sudah kami terima.</div>
+              <div className="mt-1 text-slate-600">
+                Panitia akan memverifikasi sesuai ketersediaan slot.
+              </div>
+              <PromoNote />
+            </div>,
+            'success'
+          )
+          setEmail(''); setName(''); setWa('')
+          setSubmitting(false)
+          return
+        }
       }
 
-      // BE error (ok === false)
-      openToast(
-        <div>{json?.error || json?.message || 'Gagal memproses pendaftaran.'}</div>,
-        'error',
-      )
+      openToast(<div>{json?.error || json?.message || 'Gagal memproses pendaftaran.'}</div>, 'error')
     } catch {
       openToast(<div>Gagal menghubungi server.</div>, 'error')
     } finally {
@@ -359,7 +341,7 @@ export default function RegisterPage() {
         backgroundAttachment: 'fixed',
       }}
     >
-      {/* DREAMY FROSTED LAYER (global) — cerah */}
+      {/* DREAMY FROSTED LAYER */}
       <div className="absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-white/85 backdrop-blur-[45px] backdrop-saturate-150" />
         <div className="absolute inset-0 bg-gradient-to-b from-rose-50/60 via-white/60 to-white/80" />
@@ -416,7 +398,6 @@ export default function RegisterPage() {
         </form>
       </section>
 
-      {/* Toast */}
       <Toast open={toastOpen} type={toastType} onClose={() => setToastOpen(false)}>
         {toastBody}
       </Toast>
