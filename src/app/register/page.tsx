@@ -84,16 +84,21 @@ export default function RegisterPage() {
   }
 
   async function fetchMyTickets(emailAddr: string): Promise<string[]> {
-    if (!API_BASE || !eventId) return []
-    try {
-      const res = await fetch(`${API_BASE}/api/tickets?eventId=${encodeURIComponent(eventId)}&status=ALL&email=${encodeURIComponent(emailAddr)}`)
-      const json = await res.json()
-      if (json?.ok) {
-        return (json.items || []).map((it: any) => String(it.code || ''))
+      if (!API_BASE || !eventId) return []
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/tickets?eventId=${encodeURIComponent(eventId)}&status=ALL&email=${encodeURIComponent(emailAddr)}`
+        )
+        const json: { ok?: boolean; items?: Array<{ code: string }> } = await res.json()
+        if (json?.ok) {
+          const arr = (json.items ?? []) as Array<{ code: string }>
+          return arr.map((it) => String(it.code || ''))
+        }
+      } catch {
+        /* noop */
       }
-    } catch {}
-    return []
-  }
+      return []
+    }
 
   function openToast(node: React.ReactNode, type: 'info'|'success'|'error'='info') {
     setToastType(type)

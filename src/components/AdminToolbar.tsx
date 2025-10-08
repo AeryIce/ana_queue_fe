@@ -25,7 +25,7 @@ export function AdminToolbar({ onSuccess, eventId = "seed-event" }: Props) {
       push(`Dipanggil ${N} nomor ke slot aktif`, "Sukses");
       return;
     } catch {
-      // 2) Fallback PASTI: ambil NEXT terbaru dari /api/board, lalu panggil N tiket sekaligus
+      // 2) Fallback: ambil NEXT dari /api/board, lalu panggil N tiket satu per satu
       try {
         const board = await fetchBoard(eventId);
         const pick: Ticket[] = (board.next ?? []).slice(0, N);
@@ -35,14 +35,13 @@ export function AdminToolbar({ onSuccess, eventId = "seed-event" }: Props) {
           return;
         }
 
-        // panggil berurutan biar rapi di BE
         for (const t of pick) {
           await callByCode(t.code);
         }
 
         onSuccess?.();
         push(`Fallback: panggil ${pick.length} dari NEXT`, "Sukses");
-      } catch (e) {
+      } catch {
         push("Fallback gagal memanggil NEXT.", "Gagal");
       }
     } finally {
@@ -51,10 +50,10 @@ export function AdminToolbar({ onSuccess, eventId = "seed-event" }: Props) {
   };
 
   const doCallByCode = async () => {
-    if (!code.trim()) return;
+    const c = code.trim().toUpperCase();
+    if (!c) return;
     setBusy(true);
     try {
-      const c = code.trim().toUpperCase();
       await callByCode(c);
       setCode("");
       onSuccess?.();
@@ -75,13 +74,18 @@ export function AdminToolbar({ onSuccess, eventId = "seed-event" }: Props) {
         <div className="flex gap-2">
           <input
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onChange={(ev: React.ChangeEvent<HTMLInputElement>) =>
+              setCode(ev.target.value.toUpperCase())
+            }
             placeholder="AH-123"
             className="input"
+            inputMode="text"
+            autoCapitalize="characters"
+            autoCorrect="off"
           />
           <button
             onClick={doCallByCode}
-            disabled={busy || !code}
+            disabled={busy || !code.trim()}
             className="btn-secondary"
           >
             Call by Code

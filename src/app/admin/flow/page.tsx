@@ -8,7 +8,7 @@ const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || ''
 type Ticket = {
   code: string
   order: number
-  status: 'QUEUED'|'CALLED'|'IN_PROCESS'|'DONE'|'DEFERRED'|'NO_SHOW'
+  status: 'QUEUED'|'CALLED'|'IN_PROCESS'|'DONE'|'NO_SHOW'
   email: string | null
   name: string | null
   wa: string | null

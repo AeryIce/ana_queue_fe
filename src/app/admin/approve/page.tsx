@@ -346,7 +346,7 @@ export default function ApprovePage() {
           })}
         </div>
 
-        {items.length < total && (
+        {stillHasMore && (
           <div className="mt-4 flex justify-center">
             <button onClick={loadMore} className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm" disabled={loading}>
               {loading ? 'Memuat…' : 'Load more'}
