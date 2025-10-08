@@ -26,8 +26,13 @@ type ReqResp = {
   message?: string
 }
 
-/** TOAST */
-function Toast({ open, type = 'info', onClose, children }: {
+/** TOAST – muncul di ATAS + ada header brand */
+function Toast({
+  open,
+  type = 'info',
+  onClose,
+  children,
+}: {
   open: boolean
   type?: 'info' | 'success' | 'error'
   onClose?: () => void
@@ -51,6 +56,7 @@ function Toast({ open, type = 'info', onClose, children }: {
         <button
           onClick={onClose}
           className="rounded-full px-2 py-1 text-xs hover:bg-black/5"
+          aria-label="Close"
         >
           ✕
         </button>
@@ -60,7 +66,7 @@ function Toast({ open, type = 'info', onClose, children }: {
   )
 }
 
-/** Promo */
+/** Catatan promo — disisipkan di semua toast */
 function PromoNote() {
   return (
     <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-[12px] leading-5 text-emerald-900">
@@ -73,7 +79,7 @@ function PromoNote() {
   )
 }
 
-/** Books */
+/** Strip cover buku (scrollable di HP) */
 function FeaturedBooks() {
   const covers = [
     '/ana/cover-king-of-greed.jpg',
@@ -86,19 +92,23 @@ function FeaturedBooks() {
     '/ana/cover-twisted-lies.png',
   ]
   return (
-    <div className="rounded-2xl border border-rose-100/60 bg-white/70 p-3 shadow-sm backdrop-blur-md">
+    <div className="rounded-2xl border border-rose-100/70 bg-white/60 p-3 shadow-sm backdrop-blur-md">
       <div className="mb-2 text-xs font-semibold text-rose-900/80">Featured Books</div>
       <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1">
         {covers.map((src) => (
-          <img key={src} src={src} alt="Ana Huang Book"
-            className="h-28 w-auto shrink-0 snap-start rounded-xl border border-rose-100 bg-white object-cover" />
+          <img
+            key={src}
+            src={src}
+            alt="Ana Huang Book"
+            className="h-28 w-auto shrink-0 snap-start rounded-xl border border-rose-100 bg-white object-cover"
+          />
         ))}
       </div>
     </div>
   )
 }
 
-/** Sponsor */
+/** Sponsor strip – SELALU tampil (mobile & desktop) */
 function SponsorStrip() {
   return (
     <div className="flex items-center justify-center gap-3 rounded-2xl border border-rose-100 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-md">
@@ -109,7 +119,7 @@ function SponsorStrip() {
   )
 }
 
-/** Hero */
+/** Hero cantik: Judul, foto Ana, sponsor, featured — glassier */
 function Hero() {
   return (
     <section className="relative mx-auto w-full max-w-6xl px-4 pt-6">
@@ -120,27 +130,33 @@ function Hero() {
               Ana Huang — Book Signing
             </h1>
             <p className="mt-1 text-sm text-rose-900/90">
-              Selamat datang! Silakan registrasi antrean. Panitia akan memproses sesuai ketersediaan slot.
+              Selamat datang! Silakan registrasi antrean. Panitia akan memproses sesuai
+              ketersediaan slot.
             </p>
           </div>
           <SponsorStrip />
           <div className="hidden md:block"><FeaturedBooks /></div>
         </div>
+
         <div className="flex items-center justify-center">
-          <img src="/ana/ana-hero.jpg" alt="Ana Huang"
-            className="h-40 w-40 rounded-2xl border border-rose-100 bg-white/70 object-cover shadow-sm backdrop-blur-md md:h-48 md:w-48" />
+          <img
+            src="/ana/ana-hero.jpg"
+            alt="Ana Huang"
+            className="h-40 w-40 rounded-2xl border border-rose-100 bg-white/70 object-cover shadow-sm backdrop-blur-md md:h-48 md:w-48"
+          />
         </div>
       </div>
+
       <div className="mt-4 md:hidden"><FeaturedBooks /></div>
     </section>
   )
 }
 
-/** Main page */
 export default function RegisterPage() {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [wa, setWa] = useState('')
+
   const [submitting, setSubmitting] = useState(false)
   const [toastOpen, setToastOpen] = useState(false)
   const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info')
@@ -167,9 +183,38 @@ export default function RegisterPage() {
     return u.toString()
   }
 
+  async function fetchMyTickets(emailAddr: string): Promise<string[]> {
+    if (!API_BASE || !eventId) return []
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/tickets?eventId=${encodeURIComponent(
+          eventId,
+        )}&status=ALL&email=${encodeURIComponent(emailAddr)}`,
+      )
+      const json: { ok?: boolean; items?: Array<{ code: string }> } = await res.json()
+      if (json?.ok) {
+        const arr = (json.items ?? []) as Array<{ code: string }>
+        return arr.map((it) => String(it.code || ''))
+      }
+    } catch {
+      /* noop */
+    }
+    return []
+  }
+
+  function openToast(
+    node: React.ReactNode,
+    type: 'info' | 'success' | 'error' = 'info',
+  ) {
+    setToastType(type)
+    setToastBody(node)
+    setToastOpen(true)
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!email.trim() || !name.trim()) return
+
     setSubmitting(true)
     try {
       const res = await fetch(`${API_BASE}/api/register-request`, {
@@ -178,19 +223,130 @@ export default function RegisterPage() {
         body: JSON.stringify({ eventId, email, name, wa }),
       })
       const json: ReqResp = await res.json()
-      if (json?.ok) {
-        setToastType('success')
-        setToastBody(<div>Registrasi berhasil! 🎉</div>)
-        setToastOpen(true)
+
+      if (json?.ok && json.request) {
+        const src = json.request.source
+        const stat = json.request.status
+
+        // 1) CONFIRMED (already registered)
+        if (json.alreadyRegistered || stat === 'CONFIRMED') {
+          if (src === 'MASTER' || json.request.isMasterMatch) {
+            const codes = await fetchMyTickets(json.request.email)
+            openToast(
+              <div>
+                <div className="font-semibold">Terima kasih! Email kamu sudah terdaftar.</div>
+                {codes.length > 0 ? (
+                  <div className="mt-1">
+                    Nomor antreanmu:
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {codes.map((c) => (
+                        <span
+                          key={c}
+                          className="inline-block rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-800"
+                        >
+                          {String(c).replace('AH-', 'AH')}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-slate-600">
+                    Nomor antreanmu akan tampil di layar saat giliran mendekat.
+                  </div>
+                )}
+                <div className="mt-3 flex flex-col gap-2">
+                  <a
+                    href={RUN_URL}
+                    className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
+                  >
+                    Cek Running Queue
+                  </a>
+                  <a
+                    href={periplusUrl('master')}
+                    className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+                  >
+                    Belanja buku di Periplus
+                  </a>
+                </div>
+                <PromoNote />
+              </div>,
+              'success',
+            )
+          } else {
+            // WALKIN yang sudah pernah dipakai
+            openToast(
+              <div>
+                <div className="font-semibold">Terima kasih! Email kamu sudah digunakan.</div>
+                <div className="mt-1 text-slate-600">
+                  Panitia akan mengarahkanmu sesuai ketersediaan slot.
+                </div>
+                <div className="mt-3">
+                  <a
+                    href={periplusUrl('walkin')}
+                    className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+                  >
+                    Belanja buku di Periplus
+                  </a>
+                </div>
+                <PromoNote />
+              </div>,
+              'info',
+            )
+          }
+          setSubmitting(false)
+          return
+        }
+
+        // 2) Masih PENDING (dedup) → penolakan sopan
+        if (json.dedup || stat === 'PENDING') {
+          openToast(
+            <div>
+              <div className="font-semibold">Terima kasih! Email ini sudah digunakan untuk pendaftaran.</div>
+              <div className="mt-1 text-slate-600">
+                Permintaanmu <b>sudah ada di daftar tunggu</b> dan menunggu konfirmasi panitia.
+              </div>
+              <div className="mt-3">
+                <a
+                  href={periplusUrl('pending')}
+                  className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+                >
+                  Belanja buku di Periplus
+                </a>
+              </div>
+              <PromoNote />
+            </div>,
+            'info',
+          )
+          setSubmitting(false)
+          return
+        }
+
+        // 3) Baru dibuat PENDING (pertama kali)
+        openToast(
+          <div>
+            <div className="font-semibold">Terima kasih! Permintaan registrasimu sudah kami terima.</div>
+            <div className="mt-1 text-slate-600">
+              Panitia akan memverifikasi sesuai ketersediaan slot.
+            </div>
+            <PromoNote />
+          </div>,
+          'success',
+        )
         setEmail(''); setName(''); setWa('')
-      } else {
-        setToastType('error')
-        setToastBody(<div>{json?.error || 'Gagal mendaftar.'}</div>)
-        setToastOpen(true)
+        setSubmitting(false)
+        return
       }
+
+      // BE error (ok === false)
+      openToast(
+        <div>{json?.error || json?.message || 'Gagal memproses pendaftaran.'}</div>,
+        'error',
+      )
     } catch {
-      setToastType('error'); setToastBody(<div>Server tidak merespons.</div>); setToastOpen(true)
-    } finally { setSubmitting(false) }
+      openToast(<div>Gagal menghubungi server.</div>, 'error')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -203,7 +359,7 @@ export default function RegisterPage() {
         backgroundAttachment: 'fixed',
       }}
     >
-      {/* BLUR SEBERAT TV tapi CERAH */}
+      {/* DREAMY FROSTED LAYER (global) — cerah */}
       <div className="absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-white/85 backdrop-blur-[45px] backdrop-saturate-150" />
         <div className="absolute inset-0 bg-gradient-to-b from-rose-50/60 via-white/60 to-white/80" />
@@ -211,33 +367,59 @@ export default function RegisterPage() {
 
       <Hero />
 
-      {/* Form */}
+      {/* Form registrasi */}
       <section className="mx-auto w-full max-w-6xl px-4 pb-10">
         <form
           onSubmit={onSubmit}
           className="mx-auto mt-6 w-full max-w-md rounded-2xl border border-rose-100 bg-white/75 p-6 shadow-sm backdrop-blur-md"
         >
-          <h2 className="mb-2 text-center text-lg font-extrabold text-[#7a0f2b]">Registrasi Antrean</h2>
+          <h2 className="mb-2 text-center text-lg font-extrabold text-[#7a0f2b]">
+            Registrasi Antrean
+          </h2>
           <p className="mb-4 text-center text-xs text-rose-900/80">
             Isi data di bawah. Panitia akan memproses sesuai ketersediaan slot.
           </p>
+
           <label className="mb-1 block text-xs font-medium">Email</label>
-          <input className="mb-3 w-full rounded-xl border border-rose-200 bg-white/85 px-3 py-2 text-sm backdrop-blur-sm"
-            type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input
+            className="mb-3 w-full rounded-xl border border-rose-200 bg-white/85 px-3 py-2 text-sm backdrop-blur-sm"
+            type="email"
+            placeholder="nama@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+
           <label className="mb-1 block text-xs font-medium">Nama Lengkap</label>
-          <input className="mb-3 w-full rounded-xl border border-rose-200 bg-white/85 px-3 py-2 text-sm backdrop-blur-sm"
-            value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            className="mb-3 w-full rounded-xl border border-rose-200 bg-white/85 px-3 py-2 text-sm backdrop-blur-sm"
+            placeholder="Nama lengkap"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+
           <label className="mb-1 block text-xs font-medium">WhatsApp (opsional)</label>
-          <input className="mb-5 w-full rounded-xl border border-rose-200 bg-white/85 px-3 py-2 text-sm backdrop-blur-sm"
-            value={wa} onChange={(e) => setWa(e.target.value)} />
-          <button disabled={submitting}
-            className="w-full rounded-xl bg-[#7a0f2b] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+          <input
+            className="mb-5 w-full rounded-xl border border-rose-200 bg-white/85 px-3 py-2 text-sm backdrop-blur-sm"
+            placeholder="08xxxxxxxxxx"
+            value={wa}
+            onChange={(e) => setWa(e.target.value)}
+          />
+
+          <button
+            disabled={submitting}
+            className="w-full rounded-xl bg-[#7a0f2b] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
             {submitting ? 'Mengirim…' : 'Daftar'}
           </button>
         </form>
       </section>
 
-      <Toast open={toastOpen} type={toastType} onClose={() => setToastOpen(false)}>{toastBody}</Toast>
+      {/* Toast */}
+      <Toast open={toastOpen} type={toastType} onClose={() => setToastOpen(false)}>
+        {toastBody}
+      </Toast>
     </main>
   )
 }
