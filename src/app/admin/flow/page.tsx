@@ -30,7 +30,8 @@ function chunk6<T>(arr: T[]) {
 export default function FlowPage() {
   const [active, setActive] = useState<Ticket[]>([])   // CALLED + IN_PROCESS (panel Active)
   const [queued, setQueued] = useState<Ticket[]>([])   // QUEUED (panel Queue)
-  const [deferred, setDeferred] = useState<Ticket[]>([]) // DEFERRED (opsional dipakai recall cepat)
+  //const [deferred, setDeferred] = useState<Ticket[]>([]) // DEFERRED (opsional dipakai recall cepat)
+  const [, setDeferred] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(false)
   const [recallCode, setRecallCode] = useState('')
 

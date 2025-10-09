@@ -11,28 +11,36 @@ type Req = {
   createdAt?: string | null;
 };
 
+function errorMessage(e: unknown): string {
+  if (e && typeof e === 'object' && 'message' in e) {
+    const m = (e as { message?: unknown }).message;
+    return typeof m === 'string' ? m : 'error';
+  }
+  return 'error';
+}
+
 export default function ApprovePage() {
   const [list, setList] = useState<Req[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
 
-  const load = async () => {
+  const load = async (): Promise<void> => {
     try {
       const res = await getPendingRequests();
-      const items: Req[] = Array.isArray(res) ? res : res?.items ?? [];
+      const items: Req[] = Array.isArray(res) ? res : (res?.items ?? []);
       setList(items);
       setError(null);
-    } catch (e: any) {
-      setError(e?.message ?? 'fetch error');
+    } catch (e: unknown) {
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    load();
-    timer.current = window.setInterval(load, 2500);
+    void load();
+    timer.current = window.setInterval(() => { void load(); }, 2500);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
