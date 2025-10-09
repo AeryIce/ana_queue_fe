@@ -47,43 +47,32 @@ export default function AdminPanel() {
                     <div className="h-16 animate-pulse bg-white/5 rounded-xl" />
                   </div>
                 ))
-              : data.active.map((t: Ticket) => (
-                  <div key={t.code} className="rounded-2xl p-3 bg-white/5 border border-white/10">
-                    <div className="flex items-center justify-between">
-                      <div className="text-2xl font-black tabular-nums">{t.code}</div>
-                      <div className="flex gap-2">
-                        <button
-                          className="btn-secondary"
-                          onClick={async () => {
-                            await setInProcess(t.code);
-                            await refresh();
-                          }}
-                        >
-                          In-Process
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          onClick={async () => {
-                            await setDone(t.code);
-                            await refresh();
-                          }}
-                        >
-                          Done
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          onClick={async () => {
-                            await setSkip(t.code);
-                            await refresh();
-                          }}
-                        >
-                          Skip
-                        </button>
-                      </div>
-                    </div>
-                    {t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
-                  </div>
-                ))}
+              : data.active.map((t: Ticket) => {
+  const code = t.code ?? t.id; // ← aman: selalu string
+  return (
+    <div key={t.id ?? t.code} className="rounded-2xl p-3 bg-white/5 border border-white/10">
+      <div className="flex items-center justify-between">
+        <div className="text-2xl font-black tabular-nums">{code}</div>
+        <div className="flex gap-2">
+          <button
+            className="btn-secondary"
+            onClick={async () => { await setInProcess(code); await refresh(); }}
+          >In-Process</button>
+          <button
+            className="btn-secondary"
+            onClick={async () => { await setDone(code); await refresh(); }}
+          >Done</button>
+          <button
+            className="btn-secondary"
+            onClick={async () => { await setSkip(code); await refresh(); }}
+          >Skip</button>
+        </div>
+      </div>
+      {t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
+    </div>
+  );
+})}
+
           </div>
         </section>
       ) : (

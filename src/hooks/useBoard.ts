@@ -1,38 +1,40 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { BoardResponse } from "@/lib/queueApi";
-import { fetchBoard } from "@/lib/queueApi";
+import { useEffect, useState, useCallback } from "react";
 
+export function useBoard(eventId: string, pollMs = 1500) {
+  const [data, setData] = useState({ active: [], next: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-export function useBoard(eventId = "seed-event", intervalMs = 1800) {
-const [data, setData] = useState<BoardResponse>({ active: [], next: [] });
-const [loading, setLoading] = useState(true);
-const [error, setError] = useState<string | null>(null);
-const timer = useRef<NodeJS.Timeout | null>(null);
+  const fetchBoard = useCallback(async () => {
+    try {
+      const r = await fetch(
+        `${process.env.NEXT_PUBLIC_QUEUE_API}/api/board?eventId=${eventId}`,
+        { cache: "no-store" }
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const json = await r.json();
+      setData(json);
+      setError(null);
+    } catch (err: any) {
+      console.error("fetchBoard error:", err);
+      setError(err.message || "network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId]);
 
+  // auto refresh (polling)
+  useEffect(() => {
+    fetchBoard();
+    const timer = setInterval(fetchBoard, pollMs);
+    return () => clearInterval(timer);
+  }, [fetchBoard, pollMs]);
 
-const load = useCallback(async () => {
-try {
-const r = await fetchBoard(eventId);
-setData(r);
-setError(null);
-} catch (e: unknown) {
-const msg = e instanceof Error ? e.message : "Error";
-setError(msg);
-} finally {
-setLoading(false);
-}
-}, [eventId]);
-
-
-useEffect(() => {
-void load();
-timer.current = setInterval(() => void load(), intervalMs);
-return () => {
-if (timer.current) clearInterval(timer.current);
-};
-}, [load, intervalMs]);
-
-
-return { data, loading, error, refresh: load };
+  return {
+    data,
+    loading,
+    error,
+    refresh: fetchBoard,
+  };
 }

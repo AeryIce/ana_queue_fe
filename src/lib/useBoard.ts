@@ -1,38 +1,59 @@
-"use client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { BoardResponse } from "@/lib/queueApi";
-import { fetchBoard } from "@/lib/queueApi";
+'use client';
 
+import { useCallback, useEffect, useState } from 'react';
+import { getBoard, type Ticket } from '@/lib/queueApi';
 
-export function useBoard(eventId = "seed-event", intervalMs = 1800) {
-const [data, setData] = useState<BoardResponse>({ active: [], next: [] });
-const [loading, setLoading] = useState(true);
-const [error, setError] = useState<string | null>(null);
-const timer = useRef<NodeJS.Timeout | null>(null);
-
-
-const load = useCallback(async () => {
-try {
-const r = await fetchBoard(eventId);
-setData(r);
-setError(null);
-} catch (e: unknown) {
-const msg = e instanceof Error ? e.message : "Error";
-setError(msg);
-} finally {
-setLoading(false);
-}
-}, [eventId]);
-
-
-useEffect(() => {
-void load();
-timer.current = setInterval(() => void load(), intervalMs);
-return () => {
-if (timer.current) clearInterval(timer.current);
+export type Board = {
+  active: Ticket[];
+  next: Ticket[];
+  queue: Array<{ batchNo: number; items: Ticket[] }>;
+  skipGrid: Ticket[];
+  nextCount: number;
+  totals: Record<string, number>;
 };
-}, [load, intervalMs]);
 
+const EMPTY: Board = {
+  active: [],
+  next: [],
+  queue: [],
+  skipGrid: [],
+  nextCount: 0,
+  totals: {},
+};
 
-return { data, loading, error, refresh: load };
+/**
+ * useBoard(eventId?, pollMs?)
+ * contoh: useBoard("seed-event", 1800)
+ */
+export function useBoard(eventId?: string, pollMs = 1500) {
+  const [data, setData] = useState<Board>(EMPTY);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await getBoard(eventId);
+      setData({
+        active: res?.active ?? [],
+        next: res?.next ?? [],
+        queue: res?.queue ?? [],
+        skipGrid: res?.skipGrid ?? [],
+        nextCount: res?.nextCount ?? 0,
+        totals: res?.totals ?? {},
+      });
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message ?? 'fetch error');
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, pollMs);
+    return () => clearInterval(t);
+  }, [refresh, pollMs]);
+
+  return { data, loading, error, refresh };
 }

@@ -26,38 +26,48 @@ return (
 
 {/* ACTIVE SECTION */}
 <section className="mt-3">
-<h2 className="text-base font-semibold mb-2">Active</h2>
-<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-{loading
-? Array.from({ length: 3 }).map((_, i: number) => (
-<div key={`sk-act-${i}`} className="rounded-2xl p-3 bg-white/5 border border-white/10">
-<div className="h-16 animate-pulse bg-white/5 rounded-xl" />
-</div>
-))
-: data.active.map((t: Ticket) => (
-<div key={t.code} className="rounded-2xl p-3 bg-white/5 border border-white/10">
-<div className="flex items-center justify-between">
-<div className="text-2xl font-black tabular-nums">{t.code}</div>
-<div className="flex gap-2">
-<button
-className="btn-secondary"
-onClick={async () => { await setInProcess(t.code); await refresh(); }}
->In-Process</button>
-<button
-className="btn-secondary"
-onClick={async () => { await setDone(t.code); await refresh(); }}
->Done</button>
-<button
-className="btn-secondary"
-onClick={async () => { await setSkip(t.code); await refresh(); }}
->Skip</button>
-</div>
-</div>
-{t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
-</div>
-))}
-</div>
+  <h2 className="text-base font-semibold mb-2">Active</h2>
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    {loading
+      ? Array.from({ length: 3 }).map((_, i: number) => (
+          <div key={`sk-act-${i}`} className="rounded-2xl p-3 bg-white/5 border border-white/10">
+            <div className="h-16 animate-pulse bg-white/5 rounded-xl" />
+          </div>
+        ))
+      : (data.active ?? []).map((t: Ticket) => {
+          const code = t.code ?? t.id; // fallback aman
+          return (
+            <div key={t.id ?? t.code} className="rounded-2xl p-3 bg-white/5 border border-white/10">
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-black tabular-nums">{code}</div>
+                <div className="flex gap-2">
+                  <button
+                    className="btn-secondary"
+                    onClick={async () => { await setInProcess(code); await refresh(); }}
+                  >
+                    In-Process
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    onClick={async () => { await setDone(code); await refresh(); }}
+                  >
+                    Done
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    onClick={async () => { await setSkip(code); await refresh(); }}
+                  >
+                    Skip
+                  </button>
+                </div>
+              </div>
+              {t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
+            </div>
+          );
+        })}
+  </div>
 </section>
+
 
 
 {/* NEXT SECTION */}

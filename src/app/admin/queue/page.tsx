@@ -1,77 +1,111 @@
-"use client";
-import { useBoard } from "@/hooks/useBoard";
-import { setDone, setInProcess, setSkip } from "@/lib/queueApi";
-import type { Ticket } from "@/lib/queueApi";
-import { QueueCard } from "@/components/QueueCard";
-import { AdminToolbar } from "@/components/AdminToolbar";
+'use client';
 
+import { useBoard } from '@/hooks/useBoard';
+import { callNext6, promoteToActive, skipTicket, recallTicket, doneTicket } from '@/lib/queueApi';
 
-export default function AdminPage() {
-const { data, loading, error, refresh } = useBoard("seed-event", 1600);
+export default function QueuePage() {
+  const { data, loading, error, reload } = useBoard(2500);
+  if (loading || !data) return <div className="p-4">Loading…</div>;
+  if (error) return <div className="p-4 text-red-600">Error: {error}</div>;
 
+  const { active = [], queue = [], skipGrid = [], nextCount = 0, totals = {} } = data;
 
-return (
-<div className="container-page">
-<header className="mb-2">
-<h1 className="h1">Admin Antrian — Ana Huang</h1>
-<p className="subtle">Mobile friendly controls for live queue</p>
-</header>
+  return (
+    <div className="p-4 space-y-6">
+      {/* Header / Controls */}
+      <div className="flex items-center gap-2">
+        <button
+          className="px-3 py-2 rounded bg-black text-white"
+          onClick={async () => { await callNext6(); await reload(); }}
+        >
+          Call Next 6
+        </button>
+        <button
+          className="px-3 py-2 rounded border"
+          onClick={async () => { await promoteToActive(); await reload(); }}
+        >
+          Promote
+        </button>
+        <div className="ml-auto text-sm opacity-70">
+          Active: {totals.active ?? 0} · Batches: {totals.queueBatches ?? 0} · Next: {nextCount} · Skip: {totals.skip ?? 0}
+        </div>
+      </div>
 
+      {/* Active (6 slot) */}
+      <section>
+        <h2 className="font-semibold mb-2">Active</h2>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+          {Array.from({ length: 6 }, (_, i) => i + 1).map((slot) => {
+            const t = active.find((x: any) => x.slotNo === slot);
+            return (
+              <div key={slot} className="border rounded p-3">
+                <div className="text-xs opacity-60 mb-1">Slot {slot}</div>
+                {t ? (
+                  <>
+                    <div className="font-medium">{t.code ?? t.name ?? t.id.slice(0, 6)}</div>
+                    <div className="text-xs mt-1">IN PROCESS</div>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        className="text-xs px-2 py-1 rounded border"
+                        onClick={async () => { await skipTicket(t.id); await reload(); }}
+                      >
+                        Skip
+                      </button>
+                      <button
+                        className="text-xs px-2 py-1 rounded bg-black text-white"
+                        onClick={async () => { await doneTicket(t.id); await reload(); }}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="opacity-50 text-sm">Empty</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
-<AdminToolbar onSuccess={refresh} />
+      {/* Queue per batch (max 5 batch) */}
+      <section>
+        <h2 className="font-semibold mb-2">Queue</h2>
+        <div className="grid md:grid-cols-5 gap-3">
+          {(queue as any[]).slice(0, 5).map((b: any) => (
+            <div key={b.batchNo} className="border rounded p-3">
+              <div className="font-semibold mb-2">Batch {b.batchNo}</div>
+              <ol className="space-y-1 text-sm">
+                {b.items.map((t: any) => (
+                  <li key={t.id} className="flex justify-between">
+                    <span>{t.code ?? t.name ?? t.id.slice(0, 6)}</span>
+                    <span className="opacity-60">#{t.posInBatch}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      </section>
 
-
-{error && <div className="mt-3 text-sm text-rose-300">{error}</div>}
-
-
-{/* ACTIVE SECTION */}
-<section className="mt-3">
-<h2 className="text-base font-semibold mb-2">Active</h2>
-<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-{loading
-? Array.from({ length: 3 }).map((_, i: number) => (
-<div key={`sk-act-${i}`} className="rounded-2xl p-3 bg-white/5 border border-white/10">
-<div className="h-16 animate-pulse bg-white/5 rounded-xl" />
-</div>
-))
-: data.active.map((t: Ticket) => (
-<div key={t.code} className="rounded-2xl p-3 bg-white/5 border border-white/10">
-<div className="flex items-center justify-between">
-<div className="text-2xl font-black tabular-nums">{t.code}</div>
-<div className="flex gap-2">
-<button className="btn-secondary" onClick={async () => { await setInProcess(t.code); await refresh(); }}>In-Process</button>
-<button className="btn-secondary" onClick={async () => { await setDone(t.code); await refresh(); }}>Done</button>
-<button className="btn-secondary" onClick={async () => { await setSkip(t.code); await refresh(); }}>Skip</button>
-</div>
-</div>
-{t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
-</div>
-))}
-</div>
-</section>
-
-
-{/* NEXT SECTION */}
-<section className="mt-6">
-<h2 className="text-base font-semibold mb-2">Next</h2>
-<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-{loading
-? Array.from({ length: 6 }).map((_, i: number) => (
-<div key={`sk-next-${i}`} className="rounded-xl p-3 bg-white/5 border border-white/10">
-<div className="h-14 animate-pulse bg-white/5 rounded-lg" />
-</div>
-))
-: data.next.map((t: Ticket) => (
-<div key={t.code} className="rounded-xl p-3 bg-white/5 border border-white/10">
-<QueueCard t={t} />
-</div>
-))}
-</div>
-</section>
-
-
-<footer className="mt-8 text-xs opacity-70">Dipersembahkan oleh Periplus • v-02102025</footer>
-</div>
-);
+      {/* Skip Grid */}
+      <section>
+        <h2 className="font-semibold mb-2">Skipped</h2>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+          {skipGrid.map((t: any) => (
+            <div key={t.id} className="border rounded p-2">
+              <div className="text-sm">{t.code ?? t.name ?? t.id.slice(0, 6)}</div>
+              <button
+                className="text-xs mt-2 px-2 py-1 rounded border"
+                onClick={async () => { await recallTicket(t.id); await reload(); }}
+              >
+                Recall
+              </button>
+            </div>
+          ))}
+          {skipGrid.length === 0 && <div className="opacity-60 text-sm">Tidak ada yang di-skip.</div>}
+        </div>
+      </section>
+    </div>
+  );
 }
-

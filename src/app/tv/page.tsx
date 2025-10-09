@@ -35,10 +35,11 @@ return (
 
 {/* ACTIVE GRID */}
 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-{data.active.map((t) => (
-<QueueCard key={t.code} t={t} big />
-))}
+  {(data.active ?? []).map((t: any) => (
+    <QueueCard key={t.id ?? t.code} t={t} big />
+  ))}
 </div>
+
 
 
 {/* NEXT STRIP */}
