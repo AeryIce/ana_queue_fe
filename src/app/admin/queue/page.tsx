@@ -1,14 +1,26 @@
 'use client';
 
 import { useBoard } from '@/hooks/useBoard';
-import { callNext6, promoteToActive, skipTicket, recallTicket, doneTicket } from '@/lib/queueApi';
+import {
+  callNext6,
+  promoteToActive,
+  skipTicket,
+  recallTicket,
+  doneTicket,
+  normalizeBoard,
+} from '@/lib/queueApi';
+
+const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || 'seed-event';
 
 export default function QueuePage() {
-  const { data, loading, error, reload } = useBoard(2500);
+  // useBoard(eventId, pollMs)
+  const { data, loading, error, refresh } = useBoard(EVENT_ID, 2500);
+
   if (loading || !data) return <div className="p-4">Loading…</div>;
   if (error) return <div className="p-4 text-red-600">Error: {error}</div>;
 
-  const { active = [], queue = [], skipGrid = [], nextCount = 0, totals = {} } = data;
+  const safe = normalizeBoard(data as any);
+  const { active, queue, skipGrid, nextCount, totals } = safe;
 
   return (
     <div className="p-4 space-y-6">
@@ -16,18 +28,18 @@ export default function QueuePage() {
       <div className="flex items-center gap-2">
         <button
           className="px-3 py-2 rounded bg-black text-white"
-          onClick={async () => { await callNext6(); await reload(); }}
+          onClick={async () => { await callNext6(); await refresh(); }}
         >
           Call Next 6
         </button>
         <button
           className="px-3 py-2 rounded border"
-          onClick={async () => { await promoteToActive(); await reload(); }}
+          onClick={async () => { await promoteToActive(); await refresh(); }}
         >
           Promote
         </button>
         <div className="ml-auto text-sm opacity-70">
-          Active: {totals.active ?? 0} · Batches: {totals.queueBatches ?? 0} · Next: {nextCount} · Skip: {totals.skip ?? 0}
+          Active: {(totals as any).active ?? 0} · Batches: {(totals as any).queueBatches ?? 0} · Next: {nextCount} · Skip: {(totals as any).skip ?? 0}
         </div>
       </div>
 
@@ -42,18 +54,20 @@ export default function QueuePage() {
                 <div className="text-xs opacity-60 mb-1">Slot {slot}</div>
                 {t ? (
                   <>
-                    <div className="font-medium">{t.code ?? t.name ?? t.id.slice(0, 6)}</div>
+                    <div className="font-medium">
+                      {t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}
+                    </div>
                     <div className="text-xs mt-1">IN PROCESS</div>
                     <div className="flex gap-2 mt-3">
                       <button
                         className="text-xs px-2 py-1 rounded border"
-                        onClick={async () => { await skipTicket(t.id); await reload(); }}
+                        onClick={async () => { await skipTicket(t.id); await refresh(); }}
                       >
                         Skip
                       </button>
                       <button
                         className="text-xs px-2 py-1 rounded bg-black text-white"
-                        onClick={async () => { await doneTicket(t.id); await reload(); }}
+                        onClick={async () => { await doneTicket(t.id); await refresh(); }}
                       >
                         Done
                       </button>
@@ -73,12 +87,12 @@ export default function QueuePage() {
         <h2 className="font-semibold mb-2">Queue</h2>
         <div className="grid md:grid-cols-5 gap-3">
           {(queue as any[]).slice(0, 5).map((b: any) => (
-            <div key={b.batchNo} className="border rounded p-3">
-              <div className="font-semibold mb-2">Batch {b.batchNo}</div>
+            <div key={b.batchNo ?? Math.random().toString(36)} className="border rounded p-3">
+              <div className="font-semibold mb-2">Batch {b.batchNo ?? '-'}</div>
               <ol className="space-y-1 text-sm">
-                {b.items.map((t: any) => (
+                {(b.items ?? []).map((t: any) => (
                   <li key={t.id} className="flex justify-between">
-                    <span>{t.code ?? t.name ?? t.id.slice(0, 6)}</span>
+                    <span>{t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}</span>
                     <span className="opacity-60">#{t.posInBatch}</span>
                   </li>
                 ))}
@@ -94,16 +108,20 @@ export default function QueuePage() {
         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           {skipGrid.map((t: any) => (
             <div key={t.id} className="border rounded p-2">
-              <div className="text-sm">{t.code ?? t.name ?? t.id.slice(0, 6)}</div>
+              <div className="text-sm">
+                {t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}
+              </div>
               <button
                 className="text-xs mt-2 px-2 py-1 rounded border"
-                onClick={async () => { await recallTicket(t.id); await reload(); }}
+                onClick={async () => { await recallTicket(t.id); await refresh(); }}
               >
                 Recall
               </button>
             </div>
           ))}
-          {skipGrid.length === 0 && <div className="opacity-60 text-sm">Tidak ada yang di-skip.</div>}
+          {skipGrid.length === 0 && (
+            <div className="opacity-60 text-sm">Tidak ada yang di-skip.</div>
+          )}
         </div>
       </section>
     </div>

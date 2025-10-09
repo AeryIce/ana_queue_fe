@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import StatusBadge from '@/components/ui/StatusBadge';
 import type { Ticket } from "@/lib/queueApi";
 
 
