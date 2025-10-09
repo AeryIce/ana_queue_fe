@@ -28,7 +28,7 @@ export type BoardResponse = {
   totals?: Record<string, unknown>;
   ts?: string;
   lastUpdate?: string;
-  [k: string]: any;
+  [k: string]: unknown;
 };
 
 export type NormalizedBoard = {
