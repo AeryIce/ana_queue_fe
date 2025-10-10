@@ -119,8 +119,8 @@ export async function confirmRequest(
     body: JSON.stringify({
       requestId,
       useCount,
-      //eventId: EVENT,
-      //source: 'MASTER',
+      eventId: EVENT,
+      source: 'MASTER',
     }),
   });
 
@@ -128,7 +128,7 @@ export async function confirmRequest(
     return {
       ok: false,
       ticket: { code: '', status: '', name: '', email: '' },
-      allocatedRange: { from: 0, to: 0 },
+      allocatedRange: { from: 0, to: 0 },s
       count: 0,
     } as unknown as ConfirmResponse;
   });
