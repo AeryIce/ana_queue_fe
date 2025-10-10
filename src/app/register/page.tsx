@@ -1,30 +1,30 @@
-'use client'
+'use client';
 
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react';
 
-const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || ''
-const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || ''
+const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || '';
+const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || '';
 
-type Source = 'MASTER' | 'WALKIN' | 'GIMMICK'
-type ReqStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED'
+type Source = 'MASTER' | 'WALKIN' | 'GIMMICK';
+type ReqStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED';
 type ReqResp = {
-  ok?: boolean
-  dedup?: boolean
-  alreadyRegistered?: boolean
+  ok?: boolean;
+  dedup?: boolean;
+  alreadyRegistered?: boolean;
   request?: {
-    id: string
-    eventId: string
-    email: string
-    name: string
-    wa: string | null
-    source: Source
-    status: ReqStatus
-    isMasterMatch?: boolean | null
-  }
-  poolRemaining?: number
-  error?: string
-  message?: string
-}
+    id: string;
+    eventId: string;
+    email: string;
+    name: string;
+    wa: string | null;
+    source: Source;
+    status: ReqStatus;
+    isMasterMatch?: boolean | null;
+  };
+  poolRemaining?: number;
+  error?: string;
+  message?: string;
+};
 
 /** TOAST – muncul di ATAS + ada header brand */
 function Toast({
@@ -33,20 +33,20 @@ function Toast({
   onClose,
   children,
 }: {
-  open: boolean
-  type?: 'info' | 'success' | 'error'
-  onClose?: () => void
-  children?: React.ReactNode
+  open: boolean;
+  type?: 'info' | 'success' | 'error';
+  onClose?: () => void;
+  children?: React.ReactNode;
 }) {
-  if (!open) return null
+  if (!open) return null;
   const base =
-    'fixed left-1/2 -translate-x-1/2 top-6 z-50 w-[92%] max-w-lg rounded-2xl px-4 py-3 shadow-lg border'
+    'fixed left-1/2 -translate-x-1/2 top-6 z-50 w-[92%] max-w-lg rounded-2xl px-4 py-3 shadow-lg border';
   const theme =
     type === 'success'
       ? 'bg-green-50 border-green-200 text-green-800'
       : type === 'error'
       ? 'bg-rose-50 border-rose-200 text-rose-800'
-      : 'bg-slate-50 border-slate-200 text-slate-700'
+      : 'bg-slate-50 border-slate-200 text-slate-700';
   return (
     <div className={`${base} ${theme}`}>
       <div className="mb-2 flex items-center justify-between">
@@ -63,7 +63,7 @@ function Toast({
       </div>
       <div className="text-sm leading-5">{children}</div>
     </div>
-  )
+  );
 }
 
 /** Banner promo (gambar) untuk disisipkan di toast */
@@ -81,7 +81,7 @@ function PromoBanner({ href }: { href: string }) {
         className="w-full rounded-xl border border-amber-200 shadow-sm"
       />
     </a>
-  )
+  );
 }
 
 /** Strip cover buku (scrollable di HP) */
@@ -95,7 +95,7 @@ function FeaturedBooks() {
     '/ana/cover-twisted-games.png',
     '/ana/cover-twisted-hate.png',
     '/ana/cover-twisted-lies.png',
-  ]
+  ];
   return (
     <div className="rounded-2xl border border-rose-100/70 bg-white/60 p-3 shadow-sm backdrop-blur-md">
       <div className="mb-2 text-xs font-semibold text-rose-900/80">Featured Books</div>
@@ -110,7 +110,7 @@ function FeaturedBooks() {
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 /** Sponsor strip – SELALU tampil (mobile & desktop) */
@@ -121,7 +121,78 @@ function SponsorStrip() {
       <span className="text-xs text-rose-900/60">Dipersiapkan oleh</span>
       <img src="/brand/periplus.png" alt="Periplus" className="h-8 w-auto" />
     </div>
-  )
+  );
+}
+
+/* =========================
+   Helpers untuk submit aman
+   ========================= */
+
+type RegisterPayload = { eventId: string; email: string; name: string; wa?: string };
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+function normalizeReqResp(json: unknown): ReqResp {
+  if (!isObject(json)) return { ok: false, message: 'Invalid response' };
+  const out: ReqResp = {};
+  if ('ok' in json && typeof json.ok === 'boolean') out.ok = json.ok;
+  if ('dedup' in json && typeof json.dedup === 'boolean') out.dedup = json.dedup;
+  if ('alreadyRegistered' in json && typeof json.alreadyRegistered === 'boolean') out.alreadyRegistered = json.alreadyRegistered;
+  if ('poolRemaining' in json && typeof json.poolRemaining === 'number') out.poolRemaining = json.poolRemaining;
+  if ('error' in json && typeof json.error === 'string') out.error = json.error;
+  if ('message' in json && typeof json.message === 'string') out.message = json.message;
+
+  if ('request' in json && isObject(json.request)) {
+    const rq = json.request;
+    out.request = {
+      id: typeof rq.id === 'string' ? rq.id : '',
+      eventId: typeof rq.eventId === 'string' ? rq.eventId : '',
+      email: typeof rq.email === 'string' ? rq.email : '',
+      name: typeof rq.name === 'string' ? rq.name : '',
+      wa: typeof rq.wa === 'string' ? rq.wa : null,
+      source: (rq.source === 'MASTER' || rq.source === 'WALKIN' || rq.source === 'GIMMICK') ? rq.source : 'MASTER',
+      status: (rq.status === 'PENDING' || rq.status === 'CONFIRMED' || rq.status === 'CANCELLED') ? rq.status : 'PENDING',
+      isMasterMatch: ('isMasterMatch' in rq && typeof rq.isMasterMatch === 'boolean') ? rq.isMasterMatch : null,
+    };
+  }
+  return out;
+}
+
+/** POST register dengan fallback beberapa route agar tahan perubahan BE */
+async function postRegisterWithFallback(payload: RegisterPayload): Promise<ReqResp> {
+  const paths = [
+    '/api/register-request',   // lama (di env kamu sempat 404)
+    '/api/registrants',        // kemungkinan POST create
+    '/api/register/requests',  // variasi route
+    '/api/registration',       // variasi lain
+    '/api/registrations',      // variasi lain (plural)
+  ];
+  let lastStatus = '';
+  for (const p of paths) {
+    const res = await fetch(`${API_BASE}${p}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      try {
+        const json = await res.json();
+        return normalizeReqResp(json);
+      } catch {
+        return { ok: false, message: 'Invalid JSON from server' };
+      }
+    }
+    // 404/405 → coba kandidat berikutnya
+    if (res.status === 404 || res.status === 405) {
+      lastStatus = `${res.status} ${res.statusText}`;
+      continue;
+    }
+    // error lain: simpan; jika semua gagal, kirim status terakhir
+    lastStatus = `${res.status} ${res.statusText}`;
+  }
+  return { ok: false, message: lastStatus || 'No matching endpoint' };
 }
 
 /** Hero cantik: Judul, foto Ana, sponsor, featured — glassier */
@@ -158,89 +229,85 @@ function Hero() {
         <FeaturedBooks />
       </div>
     </section>
-  )
+  );
 }
 
 export default function RegisterPage() {
-  const [email, setEmail] = useState('')
-  const [name, setName] = useState('')
-  const [wa, setWa] = useState('')
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [wa, setWa] = useState('');
 
-  const [submitting, setSubmitting] = useState(false)
-  const [toastOpen, setToastOpen] = useState(false)
-  const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info')
-  const [toastBody, setToastBody] = useState<React.ReactNode>(null)
+  const [submitting, setSubmitting] = useState(false);
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info');
+  const [toastBody, setToastBody] = useState<React.ReactNode>(null);
 
   const eventId = useMemo(() => {
-    if (typeof window === 'undefined') return EVENT_ID
-    const u = new URL(window.location.href)
-    return u.searchParams.get('event') || EVENT_ID
-  }, [])
+    if (typeof window === 'undefined') return EVENT_ID;
+    const u = new URL(window.location.href);
+    return u.searchParams.get('event') || EVENT_ID;
+  }, []);
 
   const RUN_URL = useMemo(() => {
-    if (typeof window === 'undefined') return ''
-    return `${window.location.origin}/tv?event=${encodeURIComponent(eventId)}`
-  }, [eventId])
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/tv?event=${encodeURIComponent(eventId)}`;
+  }, [eventId]);
 
   function periplusUrl(tag: 'master' | 'walkin' | 'pending') {
-    const base = 'https://www.periplus.com/recommendations/Ana+Huang'
-    const u = new URL(base)
-    u.searchParams.set('utm_source', 'anaqueue')
-    u.searchParams.set('utm_medium', 'web')
-    u.searchParams.set('utm_campaign', 'ah_event')
-    u.searchParams.set('utm_content', tag)
-    return u.toString()
+    const base = 'https://www.periplus.com/recommendations/Ana+Huang';
+    const u = new URL(base);
+    u.searchParams.set('utm_source', 'anaqueue');
+    u.searchParams.set('utm_medium', 'web');
+    u.searchParams.set('utm_campaign', 'ah_event');
+    u.searchParams.set('utm_content', tag);
+    return u.toString();
   }
 
   async function fetchMyTickets(emailAddr: string): Promise<string[]> {
-    if (!API_BASE || !eventId) return []
+    if (!API_BASE || !eventId) return [];
     try {
       const res = await fetch(
         `${API_BASE}/api/tickets?eventId=${encodeURIComponent(
           eventId,
         )}&status=ALL&email=${encodeURIComponent(emailAddr)}`,
-      )
-      const json: { ok?: boolean; items?: Array<{ code: string }> } = await res.json()
+      );
+      const json: { ok?: boolean; items?: Array<{ code: string }> } = await res.json();
       if (json?.ok) {
-        const arr = (json.items ?? []) as Array<{ code: string }>
-        return arr.map((it) => String(it.code || ''))
+        const arr = (json.items ?? []) as Array<{ code: string }>;
+        return arr.map((it) => String(it.code || ''));
       }
     } catch {
       /* noop */
     }
-    return []
+    return [];
   }
 
   function openToast(
     node: React.ReactNode,
     type: 'info' | 'success' | 'error' = 'info',
   ) {
-    setToastType(type)
-    setToastBody(node)
-    setToastOpen(true)
+    setToastType(type);
+    setToastBody(node);
+    setToastOpen(true);
   }
 
   async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!email.trim() || !name.trim()) return
-    setSubmitting(true)
+    e.preventDefault();
+    if (!email.trim() || !name.trim()) return;
+    setSubmitting(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/register-request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventId, email, name, wa }),
-      })
-      const json: ReqResp = await res.json()
+      // Gunakan fallback agar tahan perubahan route BE
+      const json = await postRegisterWithFallback({ eventId, email, name, wa: wa || undefined });
 
       if (json?.ok && json.request) {
-        const src = json.request.source
-        const stat = json.request.status
+        const src = json.request.source;
+        const stat = json.request.status;
 
         // 1) CONFIRMED (already registered)
         if (json.alreadyRegistered || stat === 'CONFIRMED') {
           if (src === 'MASTER' || json.request.isMasterMatch) {
-            const codes = await fetchMyTickets(json.request.email)
+            const codes = await fetchMyTickets(json.request.email);
             openToast(
               <div>
                 <div className="font-semibold">Terima kasih! Email kamu sudah terdaftar.</div>
@@ -284,7 +351,7 @@ export default function RegisterPage() {
                 <PromoBanner href={periplusUrl('master')} />
               </div>,
               'success',
-            )
+            );
           } else {
             // WALKIN yang sudah pernah dipakai
             openToast(
@@ -306,10 +373,10 @@ export default function RegisterPage() {
                 <PromoBanner href={periplusUrl('walkin')} />
               </div>,
               'info',
-            )
+            );
           }
-          setSubmitting(false)
-          return
+          setSubmitting(false);
+          return;
         }
 
         // 2) Sudah pernah request dan masih pending (dedup true)
@@ -336,9 +403,9 @@ export default function RegisterPage() {
               <PromoBanner href={periplusUrl('pending')} />
             </div>,
             'info',
-          )
-          setSubmitting(false)
-          return
+          );
+          setSubmitting(false);
+          return;
         }
 
         // 3) Baru daftar pertama kali → pending baru
@@ -354,23 +421,23 @@ export default function RegisterPage() {
               <PromoBanner href={periplusUrl('pending')} />
             </div>,
             'success',
-          )
-          setEmail('')
-          setName('')
-          setWa('')
-          setSubmitting(false)
-          return
+          );
+          setEmail('');
+          setName('');
+          setWa('');
+          setSubmitting(false);
+          return;
         }
       }
 
       openToast(
         <div>{json?.error || json?.message || 'Gagal memproses pendaftaran.'}</div>,
         'error',
-      )
+      );
     } catch {
-      openToast(<div>Gagal menghubungi server.</div>, 'error')
+      openToast(<div>Gagal menghubungi server.</div>, 'error');
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
@@ -445,5 +512,5 @@ export default function RegisterPage() {
         {toastBody}
       </Toast>
     </main>
-  )
+  );
 }
