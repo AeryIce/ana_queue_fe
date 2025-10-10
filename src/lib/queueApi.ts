@@ -24,6 +24,7 @@ export type Ticket = {
   order?: number | null;
 };
 
+// Snapshot board dari BE (longgar: field bisa bertambah)
 export type BoardResponse = {
   active?: Ticket[];
   queue?: Ticket[];
@@ -43,14 +44,37 @@ export type NormalizedBoard = {
   totals: Record<string, unknown>;
 } & BoardResponse;
 
+// Respons generic untuk operasi mutasi (promote/done/skip/recall/dll)
+export type MutateResponse = {
+  ok?: boolean;
+  message?: string;
+  [k: string]: unknown;
+};
+
+// Respons spesifik pool & confirm
+export type PoolResponse = {
+  ok: boolean;
+  eventId: string;
+  pool: number;
+  method?: string;
+};
+
+export type ConfirmResponse = {
+  ok: boolean;
+  ticket: { code: string; status: string; name: string; email: string };
+  allocatedRange: { from: number; to: number };
+  count: number;
+};
+
+// Util: normalisasi board
 export function normalizeBoard(b?: BoardResponse | null): NormalizedBoard {
   const board = b ?? {};
   const nextArr = board.next ?? [];
   return {
     active: board.active ?? [],
-    next: nextArr,
-    queue: board.queue ?? [],
-    skipGrid: board.skipGrid ?? [],
+    next: Array.isArray(nextArr) ? nextArr : [],
+    queue: Array.isArray(board.queue) ? board.queue : [],
+    skipGrid: Array.isArray(board.skipGrid) ? board.skipGrid : [],
     nextCount:
       typeof board.nextCount === 'number'
         ? board.nextCount
@@ -62,25 +86,31 @@ export function normalizeBoard(b?: BoardResponse | null): NormalizedBoard {
   };
 }
 
+// ---- Helper aman json tanpa `any`
+async function safeJson<T>(res: Response): Promise<T> {
+  const data = (await res.json()) as unknown;
+  return data as T;
+}
+
 // ---- Pool
-export async function fetchPool() {
+export async function fetchPool(): Promise<PoolResponse> {
   const EVENT = ENV_EVENT_ID;
   const res = await fetch(
     `${BASE}/api/pool?eventId=${encodeURIComponent(EVENT)}`,
     { cache: 'no-store' }
   );
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.reason || 'Gagal memuat pool');
-  return data as {
-    ok: boolean;
-    eventId: string;
-    pool: number;
-    method?: string;
-  };
+  const data = await safeJson<PoolResponse>(res).catch(() => {
+    return { ok: false, eventId: EVENT, pool: 0 } as PoolResponse;
+  });
+  if (!res.ok) throw new Error((data as { message?: string })?.message ?? 'Gagal memuat pool');
+  return data;
 }
 
 // ---- Confirm (legacy payload)
-export async function confirmRequest(requestId: string, useCount = 1) {
+export async function confirmRequest(
+  requestId: string,
+  useCount = 1
+): Promise<ConfirmResponse> {
   const EVENT = ENV_EVENT_ID;
 
   const res = await fetch(`${BASE}/api/register-confirm`, {
@@ -94,17 +124,20 @@ export async function confirmRequest(requestId: string, useCount = 1) {
     }),
   });
 
-  const data = await res.json().catch(() => ({}));
+  const data = await safeJson<ConfirmResponse>(res).catch(() => {
+    return {
+      ok: false,
+      ticket: { code: '', status: '', name: '', email: '' },
+      allocatedRange: { from: 0, to: 0 },
+      count: 0,
+    } as unknown as ConfirmResponse;
+  });
+
   if (!res.ok) {
-    const msg = (data?.message || 'Approve gagal').toString();
+    const msg = ((data as { message?: string })?.message || 'Approve gagal').toString();
     throw new Error(msg);
   }
-  return data as {
-    ok: boolean;
-    ticket: { code: string; status: string; name: string; email: string };
-    allocatedRange: { from: number; to: number };
-    count: number;
-  };
+  return data;
 }
 
 // ---- Board snapshot sederhana
@@ -115,19 +148,20 @@ export async function getBoard(eventId?: string): Promise<BoardResponse> {
     { cache: 'no-store' }
   );
   if (!r.ok) throw new Error(`getBoard failed: ${r.status}`);
-  return r.json();
+  return safeJson<BoardResponse>(r);
 }
 
 // ---- Ops ringan (tanpa batch)
-export async function promoteToActive() {
+export async function promoteToActive(): Promise<MutateResponse | BoardResponse> {
   const r = await fetch(
     `${BASE}/api/promote?eventId=${encodeURIComponent(ENV_EVENT_ID)}`,
     { method: 'POST' }
   );
   if (!r.ok) throw new Error(`promote failed: ${r.status}`);
-  return r.json();
+  return safeJson<MutateResponse | BoardResponse>(r);
 }
-export async function doneTicket(id: string) {
+
+export async function doneTicket(id: string): Promise<MutateResponse> {
   const r = await fetch(
     `${BASE}/api/done/${encodeURIComponent(id)}?eventId=${encodeURIComponent(
       ENV_EVENT_ID
@@ -135,9 +169,10 @@ export async function doneTicket(id: string) {
     { method: 'POST' }
   );
   if (!r.ok) throw new Error(`done failed: ${r.status}`);
-  return r.json();
+  return safeJson<MutateResponse>(r);
 }
-export async function skipTicket(id: string) {
+
+export async function skipTicket(id: string): Promise<MutateResponse> {
   const r = await fetch(
     `${BASE}/api/skip/${encodeURIComponent(id)}?eventId=${encodeURIComponent(
       ENV_EVENT_ID
@@ -145,9 +180,10 @@ export async function skipTicket(id: string) {
     { method: 'POST' }
   );
   if (!r.ok) throw new Error(`skip failed: ${r.status}`);
-  return r.json();
+  return safeJson<MutateResponse>(r);
 }
-export async function recallTicket(id: string) {
+
+export async function recallTicket(id: string): Promise<MutateResponse> {
   const r = await fetch(
     `${BASE}/api/recall/${encodeURIComponent(id)}?eventId=${encodeURIComponent(
       ENV_EVENT_ID
@@ -155,7 +191,7 @@ export async function recallTicket(id: string) {
     { method: 'POST' }
   );
   if (!r.ok) throw new Error(`recall failed: ${r.status}`);
-  return r.json();
+  return safeJson<MutateResponse>(r);
 }
 
 // ---- ALIASES untuk kompatibilitas komponen lama ----
@@ -164,23 +200,23 @@ export async function recallTicket(id: string) {
 export const fetchBoard = getBoard;
 
 // 2) Komponen lama import "callNext" → arahkan ke promoteToActive
-export async function callNext() {
+export async function callNext(): Promise<MutateResponse | BoardResponse> {
   return promoteToActive();
 }
 
 // 2b) Beberapa file lama pakai "callNext6" → tetap panggil promoteToActive
-export async function callNext6() {
+export async function callNext6(): Promise<MutateResponse | BoardResponse> {
   return promoteToActive();
 }
 
 // 3) Komponen lama import "callByCode" → coba recall-by-code jika endpoint ada; jika tidak, fallback ke promote
-export async function callByCode(code: string) {
+export async function callByCode(code: string): Promise<MutateResponse | BoardResponse> {
   const url = `${BASE}/api/recall-by-code/${encodeURIComponent(
     code
   )}?eventId=${encodeURIComponent(ENV_EVENT_ID)}`;
   try {
     const r = await fetch(url, { method: 'POST' });
-    if (r.ok) return r.json();
+    if (r.ok) return safeJson<MutateResponse | BoardResponse>(r);
   } catch {
     // ignore
   }
