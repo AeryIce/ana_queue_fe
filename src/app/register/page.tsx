@@ -244,72 +244,208 @@ export default function RegisterPage() {
   }
 
   async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email.trim() || !name.trim()) return;
-    setSubmitting(true);
+  e.preventDefault();
+  if (!email.trim() || !name.trim()) return; // UI tetap minta nama, tapi BE tidak dikirimkan name
+  setSubmitting(true);
 
-    try {
-      // Endpoint BE yang benar: POST /api/register (RegisterController)
-      const res = await fetch(`${API_BASE}/api/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventId, email, wa }),
-      });
+  try {
+    // BE DTO butuh: { eventId, email, wa? } — name TIDAK dikirim
+    const body = {
+      eventId,
+      email: email.trim().toLowerCase(),
+      ...(wa.trim() ? { wa: wa.trim() } : {}),
+    };
 
-      if (!res.ok) {
-        // 404 dari BE biasanya NotFoundException (mis. email bukan master)
-        let msg = 'Gagal memproses pendaftaran.';
-        try {
-          const t = await res.text();
-          if (t) msg = t;
-        } catch {}
-        openToast(<div>{msg}</div>, 'error');
+    if (!API_BASE || !body.eventId || !body.email) {
+      openToast(<div>Konfigurasi tidak lengkap (API/EVENT/Email).</div>, 'error');
+      setSubmitting(false);
+      return;
+    }
+
+    const res = await fetch(`${API_BASE}/api/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    // Map error → pesan ramah & cegah 500 berasa “misterius”
+    if (!res.ok) {
+      let msg = 'Gagal memproses pendaftaran.';
+      try {
+        const t = await res.text();
+        if (t) msg = t;
+      } catch { /* noop */ }
+
+      if (res.status === 404) {
+        msg = 'Email tidak terdaftar pada master data.';
+      } else if (res.status === 400) {
+        msg = 'Data tidak valid. Periksa email & event.';
+      } else if (res.status === 409) {
+        msg = 'Email sudah terdaftar / sedang diproses.';
+      }
+      openToast(<div>{msg}</div>, 'error');
+      setSubmitting(false);
+      return;
+    }
+
+    // FE harus tahan 2 bentuk respons:
+    // a) model baru (RegisterService): { tickets?: [{code}], message?, ... }
+    // b) model lama (ReqResp): { ok?, request?, dedup?, ... }
+    const raw = (await res.json()) as unknown;
+
+    // a) RegisterServiceResp → anggap CONFIRMED, tampilkan tiket jika ada
+    if (looksLikeRegisterServiceResp(raw)) {
+      const tickets = Array.isArray(raw.tickets) ? raw.tickets : [];
+      const codes = tickets.map((t) => String(t.code || ''));
+      openToast(
+        <div>
+          <div className="font-semibold">Terima kasih! Email kamu sudah terdaftar.</div>
+          {codes.length > 0 ? (
+            <div className="mt-1">
+              Nomor antreanmu:
+              <div className="mt-1 flex flex-wrap gap-1">
+                {codes.map((c) => (
+                  <span
+                    key={c}
+                    className="inline-block rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-800"
+                  >
+                    {String(c).replace('AH-', 'AH')}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-1 text-slate-600">
+              Nomor antreanmu akan tampil di layar saat giliran mendekat.
+            </div>
+          )}
+          <div className="mt-3 flex flex-col gap-2">
+            <a
+              href={RUN_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
+            >
+              Cek Running Queue
+            </a>
+            <a
+              href={periplusUrl('master')}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+            >
+              Belanja buku di Periplus
+            </a>
+          </div>
+          <PromoBanner href={periplusUrl('master')} />
+        </div>,
+        'success',
+      );
+      setEmail('');
+      setName('');
+      setWa('');
+      setSubmitting(false);
+      return;
+    }
+
+    // b) Bentuk lama (ReqResp)
+    const json = isObject(raw) ? (raw as ReqResp) : {};
+    if (json?.ok && json.request) {
+      const src = json.request.source;
+      const stat = json.request.status;
+
+      // already registered / confirmed
+      if (json.alreadyRegistered || stat === 'CONFIRMED') {
+        if (src === 'MASTER' || json.request.isMasterMatch) {
+          const codes = await fetchMyTickets(json.request.email);
+          openToast(
+            <div>
+              <div className="font-semibold">Terima kasih! Email kamu sudah terdaftar.</div>
+              {codes.length > 0 ? (
+                <div className="mt-1">
+                  Nomor antreanmu:
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {codes.map((c) => (
+                      <span
+                        key={c}
+                        className="inline-block rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-800"
+                      >
+                        {String(c).replace('AH-', 'AH')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-1 text-slate-600">
+                  Nomor antreanmu akan tampil di layar saat giliran mendekat.
+                </div>
+              )}
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={RUN_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
+                >
+                  Cek Running Queue
+                </a>
+                <a
+                  href={periplusUrl('master')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+                >
+                  Belanja buku di Periplus
+                </a>
+              </div>
+              <PromoBanner href={periplusUrl('master')} />
+            </div>,
+            'success',
+          );
+        } else {
+          // WALKIN sudah pernah dipakai
+          openToast(
+            <div>
+              <div className="font-semibold">Terima kasih! Email kamu sudah digunakan.</div>
+              <div className="mt-1 text-slate-600">
+                Panitia akan mengarahkanmu sesuai ketersediaan slot.
+              </div>
+              <div className="mt-3">
+                <a
+                  href={periplusUrl('walkin')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+                >
+                  Belanja buku di Periplus
+                </a>
+              </div>
+              <PromoBanner href={periplusUrl('walkin')} />
+            </div>,
+            'info',
+          );
+        }
         setSubmitting(false);
         return;
       }
 
-      // FE harus tahan 2 bentuk respons:
-      // a) Bentuk lama (ReqResp) dgn request, ok, dedup, dll
-      // b) Bentuk baru (RegisterServiceResp) dgn tickets, message, dll
-      const raw = (await res.json()) as unknown;
-
-      // b) Respons dari RegisterService (langsung confirmed dan punya tickets)
-      if (looksLikeRegisterServiceResp(raw)) {
-        const tickets = Array.isArray(raw.tickets) ? raw.tickets : [];
-        const codes = tickets.map((t) => String(t.code || ''));
+      // pending dedup
+      if (json.dedup === true) {
         openToast(
           <div>
-            <div className="font-semibold">Terima kasih! Email kamu sudah terdaftar.</div>
-            {codes.length > 0 ? (
-              <div className="mt-1">
-                Nomor antreanmu:
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {codes.map((c) => (
-                    <span
-                      key={c}
-                      className="inline-block rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-800"
-                    >
-                      {String(c).replace('AH-', 'AH')}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="mt-1 text-slate-600">
-                Nomor antreanmu akan tampil di layar saat giliran mendekat.
-              </div>
-            )}
-            <div className="mt-3 flex flex-col gap-2">
+            <div className="font-semibold">
+              Terima kasih! Email ini sudah digunakan untuk pendaftaran.
+            </div>
+            <div className="mt-1 text-slate-600">
+              Permintaanmu <b>sudah ada di daftar tunggu</b> dan menunggu konfirmasi
+              panitia.
+            </div>
+            <div className="mt-3">
               <a
-                href={RUN_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
-              >
-                Cek Running Queue
-              </a>
-              <a
-                href={periplusUrl('master')}
+                href={periplusUrl('pending')}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
@@ -317,7 +453,25 @@ export default function RegisterPage() {
                 Belanja buku di Periplus
               </a>
             </div>
-            <PromoBanner href={periplusUrl('master')} />
+            <PromoBanner href={periplusUrl('pending')} />
+          </div>,
+          'info',
+        );
+        setSubmitting(false);
+        return;
+      }
+
+      // pending baru
+      if (!json.dedup && stat === 'PENDING') {
+        openToast(
+          <div>
+            <div className="font-semibold">
+              Terima kasih! Permintaan registrasimu sudah kami terima.
+            </div>
+            <div className="mt-1 text-slate-600">
+              Panitia akan memverifikasi sesuai ketersediaan slot.
+            </div>
+            <PromoBanner href={periplusUrl('pending')} />
           </div>,
           'success',
         );
@@ -327,150 +481,24 @@ export default function RegisterPage() {
         setSubmitting(false);
         return;
       }
-
-      // a) Respons lama (ReqResp)
-      const json: ReqResp = isObject(raw) ? (raw as ReqResp) : {};
-      if (json?.ok && json.request) {
-        const src = json.request.source;
-        const stat = json.request.status;
-
-        // 1) CONFIRMED (already registered)
-        if (json.alreadyRegistered || stat === 'CONFIRMED') {
-          if (src === 'MASTER' || json.request.isMasterMatch) {
-            const codes = await fetchMyTickets(json.request.email);
-            openToast(
-              <div>
-                <div className="font-semibold">Terima kasih! Email kamu sudah terdaftar.</div>
-                {codes.length > 0 ? (
-                  <div className="mt-1">
-                    Nomor antreanmu:
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {codes.map((c) => (
-                        <span
-                          key={c}
-                          className="inline-block rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-800"
-                        >
-                          {String(c).replace('AH-', 'AH')}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-1 text-slate-600">
-                    Nomor antreanmu akan tampil di layar saat giliran mendekat.
-                  </div>
-                )}
-                <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={RUN_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
-                  >
-                    Cek Running Queue
-                  </a>
-                  <a
-                    href={periplusUrl('master')}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
-                  >
-                    Belanja buku di Periplus
-                  </a>
-                </div>
-                <PromoBanner href={periplusUrl('master')} />
-              </div>,
-              'success',
-            );
-          } else {
-            // WALKIN yang sudah pernah dipakai
-            openToast(
-              <div>
-                <div className="font-semibold">Terima kasih! Email kamu sudah digunakan.</div>
-                <div className="mt-1 text-slate-600">
-                  Panitia akan mengarahkanmu sesuai ketersediaan slot.
-                </div>
-                <div className="mt-3">
-                  <a
-                    href={periplusUrl('walkin')}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
-                  >
-                    Belanja buku di Periplus
-                  </a>
-                </div>
-                <PromoBanner href={periplusUrl('walkin')} />
-              </div>,
-              'info',
-            );
-          }
-          setSubmitting(false);
-          return;
-        }
-
-        // 2) Sudah pernah request dan masih pending (dedup true)
-        if (json.dedup === true) {
-          openToast(
-            <div>
-              <div className="font-semibold">
-                Terima kasih! Email ini sudah digunakan untuk pendaftaran.
-              </div>
-              <div className="mt-1 text-slate-600">
-                Permintaanmu <b>sudah ada di daftar tunggu</b> dan menunggu konfirmasi
-                panitia.
-              </div>
-              <div className="mt-3">
-                <a
-                  href={periplusUrl('pending')}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
-                >
-                  Belanja buku di Periplus
-                </a>
-              </div>
-              <PromoBanner href={periplusUrl('pending')} />
-            </div>,
-            'info',
-          );
-          setSubmitting(false);
-          return;
-        }
-
-        // 3) Baru daftar pertama kali → pending baru
-        if (!json.dedup && stat === 'PENDING') {
-          openToast(
-            <div>
-              <div className="font-semibold">
-                Terima kasih! Permintaan registrasimu sudah kami terima.
-              </div>
-              <div className="mt-1 text-slate-600">
-                Panitia akan memverifikasi sesuai ketersediaan slot.
-              </div>
-              <PromoBanner href={periplusUrl('pending')} />
-            </div>,
-            'success',
-          );
-          setEmail('');
-          setName('');
-          setWa('');
-          setSubmitting(false);
-          return;
-        }
-      }
-
-      // Jika tidak cocok bentuk apa pun
-      openToast(
-        <div>{(isObject(raw) && typeof (raw as { message?: string }).message === 'string') ? (raw as { message?: string }).message : 'Gagal memproses pendaftaran.'}</div>,
-        'error',
-      );
-    } catch {
-      openToast(<div>Gagal menghubungi server.</div>, 'error');
-    } finally {
-      setSubmitting(false);
     }
+
+    // Bentuk tak dikenal
+    openToast(
+      <div>
+        {(isObject(raw) && typeof (raw as { message?: string }).message === 'string')
+          ? (raw as { message?: string }).message
+          : 'Gagal memproses pendaftaran.'}
+      </div>,
+      'error',
+    );
+  } catch {
+    openToast(<div>Gagal menghubungi server.</div>, 'error');
+  } finally {
+    setSubmitting(false);
   }
+}
+
 
   return (
     <main
