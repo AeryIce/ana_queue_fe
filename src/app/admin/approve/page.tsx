@@ -27,9 +27,13 @@ export default function ApprovePage() {
 
   const load = async (): Promise<void> => {
     try {
-      const res = await getPendingRequests();
-      const items: Req[] = Array.isArray(res) ? res : (res?.items ?? []);
-      setList(items);
+      const payload = await getPendingRequests();
+      const data = (payload as any)?.data ?? (payload as any)?.items ?? payload ?? [];
+      const items: Req[] = Array.isArray(data) ? data : [];
+      const total: number = (payload as any)?.total ?? items.length;
+
+setList(items);
+
       setError(null);
     } catch (e: unknown) {
       setError(errorMessage(e));
