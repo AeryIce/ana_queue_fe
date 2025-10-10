@@ -93,17 +93,15 @@ async function safeJson<T>(res: Response): Promise<T> {
 }
 
 // ---- Pool
-export async function fetchPool(): Promise<PoolResponse> {
-  const EVENT = ENV_EVENT_ID;
-  const res = await fetch(
-    `${BASE}/api/pool?eventId=${encodeURIComponent(EVENT)}`,
-    { cache: 'no-store' }
-  );
-  const data = await safeJson<PoolResponse>(res).catch(() => {
-    return { ok: false, eventId: EVENT, pool: 0 } as PoolResponse;
+// ---- Pool
+export async function fetchPool(eventId?: string) {
+  const EVENT = eventId ?? ENV_EVENT_ID;
+  const res = await fetch(`${BASE}/api/pool?eventId=${encodeURIComponent(EVENT)}`, {
+    cache: 'no-store',
   });
-  if (!res.ok) throw new Error((data as { message?: string })?.message ?? 'Gagal memuat pool');
-  return data;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.reason || 'Gagal memuat pool');
+  return data as { ok: boolean; eventId: string; pool: number; method?: string };
 }
 
 // ---- Confirm (legacy payload)

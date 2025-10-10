@@ -251,15 +251,16 @@ export default function ApprovePage() {
     return u.searchParams.get('event') || EVENT_ID;
   }, []);
 
-  async function refreshPool() {
-    try {
-      const r = await fetchPool();
-      const poolVal = typeof r.pool === 'number' ? r.pool : null;
-      setPoolRemaining(poolVal);
-    } catch {
-      // ignore
-    }
+ async function refreshPool() {
+  try {
+    const r = await fetchPool(eventId); // ← kirim eventId yang aktif
+    const poolVal = typeof r.pool === 'number' ? r.pool : null;
+    setPoolRemaining(poolVal);
+  } catch {
+    // ignore
   }
+}
+
 
   function normalizeResponse(list: RegistrantList, limitIn: number, offsetIn: number): RegistrantsResponseNormalized {
     const rows = (list.data ?? []).map((reg: Registrant | RegistrantLite) => toUI(reg as RegistrantLite));
@@ -437,13 +438,15 @@ export default function ApprovePage() {
             </div>
           )}
 
-          {items.map((it: UIRegistrant) => {
-            const max = it.source === 'MASTER' ? (it.quotaRemaining ?? 0) : 9999;
-            // default UI tetap 1, tapi bisa jadi 0; clamp 0..max
-            const def = clamp0toMax(counts[it.id] ?? 1, max);
-            const isPending = it.status === 'PENDING';
-            // tombol tetap aktif selama PENDING (walau max=0 → donate-all 0 tetap valid)
-            const canAct = isPending;
+         {items.map((it: UIRegistrant) => {
+  const isWalkin = it.source === 'WALKIN' || it.source === 'GIMMICK';
+  const max = isWalkin
+    ? (poolRemaining ?? 0)        // Walk-in/Gimmick dibatasi stok pool
+    : (it.quotaRemaining ?? 0);   // Master dibatasi sisa kuota
+
+  const def = clamp0toMax(counts[it.id] ?? 1, max);
+  const isPending = it.status === 'PENDING';
+  const canAct = isPending && (!isWalkin || (poolRemaining ?? 0) > 0);
 
             return (
               <div key={it.id} className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm">
