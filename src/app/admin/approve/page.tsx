@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   getPendingRequests,
   approveRequest,
-  rejectRequest,
 } from '@/lib/approveApi';
 import type { GetPendingParams, Registrant, RegistrantList } from '@/lib/approveApi';
 
@@ -81,6 +80,14 @@ function fmtCode(code: string) {
   return code.replace('AH-', 'AH');
 }
 
+function getOptionalString(obj: unknown, key: string): string | undefined {
+  if (typeof obj === 'object' && obj !== null) {
+    const rec = obj as Record<string, unknown>;
+    const val = rec[key];
+    if (typeof val === 'string') return val;
+  }
+  return undefined;
+}
 // ——— helpers ———
 function buildName(r: Registrant): string {
   const name =
@@ -97,14 +104,16 @@ function toUI(reg: Registrant): UIRegistrant {
   const issuedBefore = typeof reg.issuedBefore === 'number' ? reg.issuedBefore : 0;
   const computedRemaining = Math.max(0, masterQuota - issuedBefore);
 
+  const evId = getOptionalString(reg, 'eventId'); // aman tanpa any
+
   return {
     id: reg.id,
-    eventId: (reg as any)?.eventId, // opsional jika BE kirim
+    eventId: evId,
     email: reg.email ?? '',
     name: buildName(reg),
     wa: reg.wa ?? null,
-    source: (reg.source as any) ?? 'MASTER',
-    status: (reg.status as any) ?? 'PENDING',
+    source: reg.source ?? 'MASTER',
+    status: reg.status ?? 'PENDING',
     isMasterMatch: reg.isMasterMatch ?? null,
     masterQuota: reg.masterQuota ?? null,
     issuedBefore: reg.issuedBefore ?? null,
@@ -113,6 +122,9 @@ function toUI(reg: Registrant): UIRegistrant {
     updatedAt: reg.updatedAt ?? undefined,
   };
 }
+
+
+
 
 export default function ApprovePage() {
   const [items, setItems] = useState<UIRegistrant[]>([]);
