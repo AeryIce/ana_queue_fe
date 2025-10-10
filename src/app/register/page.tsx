@@ -243,35 +243,32 @@ export default function RegisterPage() {
     setToastOpen(true);
   }
 
-  async function onSubmit(e: React.FormEvent) {
+ async function onSubmit(e: React.FormEvent) {
   e.preventDefault();
-  if (!email.trim() || !name.trim()) return; // UI tetap minta nama, tapi BE tidak dikirimkan name
+  if (!email.trim() || !name.trim()) return;
   setSubmitting(true);
 
   try {
-    // BE DTO butuh: { eventId, email, wa? } — name TIDAK dikirim
-    const body = {
+    // Flow Team A: daftar → masuk daftar tunggu (RegistrationRequest)
+    const payload = {
       eventId,
       email: email.trim().toLowerCase(),
+      name: name.trim(),
       ...(wa.trim() ? { wa: wa.trim() } : {}),
     };
 
-    if (!API_BASE || !body.eventId || !body.email) {
-      openToast(<div>Konfigurasi tidak lengkap (API/EVENT/Email).</div>, 'error');
+    if (!API_BASE || !payload.eventId || !payload.email || !payload.name) {
+      openToast(<div>Konfigurasi tidak lengkap (API/EVENT/Email/Nama).</div>, 'error');
       setSubmitting(false);
       return;
     }
 
-    const res = await fetch(`${API_BASE}/api/register`, {
+    const res = await fetch(`${API_BASE}/api/register-request`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
     });
 
-    // Map error → pesan ramah & cegah 500 berasa “misterius”
     if (!res.ok) {
       let msg = 'Gagal memproses pendaftaran.';
       try {
@@ -280,84 +277,25 @@ export default function RegisterPage() {
       } catch { /* noop */ }
 
       if (res.status === 404) {
-        msg = 'Email tidak terdaftar pada master data.';
+        msg = 'Event atau data tidak ditemukan.';
       } else if (res.status === 400) {
-        msg = 'Data tidak valid. Periksa email & event.';
+        msg = 'Data tidak valid. Periksa email/nama/event.';
       } else if (res.status === 409) {
-        msg = 'Email sudah terdaftar / sedang diproses.';
+        msg = 'Email sudah terdaftar / request sudah ada.';
       }
       openToast(<div>{msg}</div>, 'error');
       setSubmitting(false);
       return;
     }
 
-    // FE harus tahan 2 bentuk respons:
-    // a) model baru (RegisterService): { tickets?: [{code}], message?, ... }
-    // b) model lama (ReqResp): { ok?, request?, dedup?, ... }
-    const raw = (await res.json()) as unknown;
+    // Respons mengikuti tipe lama (ReqResp) → sesuai UI kamu
+    const json: ReqResp = await res.json();
 
-    // a) RegisterServiceResp → anggap CONFIRMED, tampilkan tiket jika ada
-    if (looksLikeRegisterServiceResp(raw)) {
-      const tickets = Array.isArray(raw.tickets) ? raw.tickets : [];
-      const codes = tickets.map((t) => String(t.code || ''));
-      openToast(
-        <div>
-          <div className="font-semibold">Terima kasih! Email kamu sudah terdaftar.</div>
-          {codes.length > 0 ? (
-            <div className="mt-1">
-              Nomor antreanmu:
-              <div className="mt-1 flex flex-wrap gap-1">
-                {codes.map((c) => (
-                  <span
-                    key={c}
-                    className="inline-block rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-800"
-                  >
-                    {String(c).replace('AH-', 'AH')}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-1 text-slate-600">
-              Nomor antreanmu akan tampil di layar saat giliran mendekat.
-            </div>
-          )}
-          <div className="mt-3 flex flex-col gap-2">
-            <a
-              href={RUN_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
-            >
-              Cek Running Queue
-            </a>
-            <a
-              href={periplusUrl('master')}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
-            >
-              Belanja buku di Periplus
-            </a>
-          </div>
-          <PromoBanner href={periplusUrl('master')} />
-        </div>,
-        'success',
-      );
-      setEmail('');
-      setName('');
-      setWa('');
-      setSubmitting(false);
-      return;
-    }
-
-    // b) Bentuk lama (ReqResp)
-    const json = isObject(raw) ? (raw as ReqResp) : {};
     if (json?.ok && json.request) {
       const src = json.request.source;
       const stat = json.request.status;
 
-      // already registered / confirmed
+      // 1) Sudah terkonfirmasi / pernah terdaftar
       if (json.alreadyRegistered || stat === 'CONFIRMED') {
         if (src === 'MASTER' || json.request.isMasterMatch) {
           const codes = await fetchMyTickets(json.request.email);
@@ -406,7 +344,7 @@ export default function RegisterPage() {
             'success',
           );
         } else {
-          // WALKIN sudah pernah dipakai
+          // WALKIN yang sudah pernah dipakai
           openToast(
             <div>
               <div className="font-semibold">Terima kasih! Email kamu sudah digunakan.</div>
@@ -432,16 +370,13 @@ export default function RegisterPage() {
         return;
       }
 
-      // pending dedup
+      // 2) Sudah pernah request dan masih pending (dedup)
       if (json.dedup === true) {
         openToast(
           <div>
-            <div className="font-semibold">
-              Terima kasih! Email ini sudah digunakan untuk pendaftaran.
-            </div>
+            <div className="font-semibold">Terima kasih! Email ini sudah digunakan untuk pendaftaran.</div>
             <div className="mt-1 text-slate-600">
-              Permintaanmu <b>sudah ada di daftar tunggu</b> dan menunggu konfirmasi
-              panitia.
+              Permintaanmu <b>sudah ada di daftar tunggu</b> dan menunggu konfirmasi panitia.
             </div>
             <div className="mt-3">
               <a
@@ -461,13 +396,11 @@ export default function RegisterPage() {
         return;
       }
 
-      // pending baru
+      // 3) Baru daftar pertama kali → pending baru
       if (!json.dedup && stat === 'PENDING') {
         openToast(
           <div>
-            <div className="font-semibold">
-              Terima kasih! Permintaan registrasimu sudah kami terima.
-            </div>
+            <div className="font-semibold">Terima kasih! Permintaan registrasimu sudah kami terima.</div>
             <div className="mt-1 text-slate-600">
               Panitia akan memverifikasi sesuai ketersediaan slot.
             </div>
@@ -483,13 +416,9 @@ export default function RegisterPage() {
       }
     }
 
-    // Bentuk tak dikenal
+    // fallback – bentuk respons tidak sesuai yang diharapkan
     openToast(
-      <div>
-        {(isObject(raw) && typeof (raw as { message?: string }).message === 'string')
-          ? (raw as { message?: string }).message
-          : 'Gagal memproses pendaftaran.'}
-      </div>,
+      <div>{json?.error || json?.message || 'Gagal memproses pendaftaran.'}</div>,
       'error',
     );
   } catch {
