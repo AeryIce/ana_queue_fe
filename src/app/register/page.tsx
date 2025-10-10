@@ -124,77 +124,6 @@ function SponsorStrip() {
   );
 }
 
-/* =========================
-   Helpers untuk submit aman
-   ========================= */
-
-type RegisterPayload = { eventId: string; email: string; name: string; wa?: string };
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null;
-}
-
-function normalizeReqResp(json: unknown): ReqResp {
-  if (!isObject(json)) return { ok: false, message: 'Invalid response' };
-  const out: ReqResp = {};
-  if ('ok' in json && typeof json.ok === 'boolean') out.ok = json.ok;
-  if ('dedup' in json && typeof json.dedup === 'boolean') out.dedup = json.dedup;
-  if ('alreadyRegistered' in json && typeof json.alreadyRegistered === 'boolean') out.alreadyRegistered = json.alreadyRegistered;
-  if ('poolRemaining' in json && typeof json.poolRemaining === 'number') out.poolRemaining = json.poolRemaining;
-  if ('error' in json && typeof json.error === 'string') out.error = json.error;
-  if ('message' in json && typeof json.message === 'string') out.message = json.message;
-
-  if ('request' in json && isObject(json.request)) {
-    const rq = json.request;
-    out.request = {
-      id: typeof rq.id === 'string' ? rq.id : '',
-      eventId: typeof rq.eventId === 'string' ? rq.eventId : '',
-      email: typeof rq.email === 'string' ? rq.email : '',
-      name: typeof rq.name === 'string' ? rq.name : '',
-      wa: typeof rq.wa === 'string' ? rq.wa : null,
-      source: (rq.source === 'MASTER' || rq.source === 'WALKIN' || rq.source === 'GIMMICK') ? rq.source : 'MASTER',
-      status: (rq.status === 'PENDING' || rq.status === 'CONFIRMED' || rq.status === 'CANCELLED') ? rq.status : 'PENDING',
-      isMasterMatch: ('isMasterMatch' in rq && typeof rq.isMasterMatch === 'boolean') ? rq.isMasterMatch : null,
-    };
-  }
-  return out;
-}
-
-/** POST register dengan fallback beberapa route agar tahan perubahan BE */
-async function postRegisterWithFallback(payload: RegisterPayload): Promise<ReqResp> {
-  const paths = [
-    '/api/register-request',   // lama (di env kamu sempat 404)
-    '/api/registrants',        // kemungkinan POST create
-    '/api/register/requests',  // variasi route
-    '/api/registration',       // variasi lain
-    '/api/registrations',      // variasi lain (plural)
-  ];
-  let lastStatus = '';
-  for (const p of paths) {
-    const res = await fetch(`${API_BASE}${p}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      try {
-        const json = await res.json();
-        return normalizeReqResp(json);
-      } catch {
-        return { ok: false, message: 'Invalid JSON from server' };
-      }
-    }
-    // 404/405 → coba kandidat berikutnya
-    if (res.status === 404 || res.status === 405) {
-      lastStatus = `${res.status} ${res.statusText}`;
-      continue;
-    }
-    // error lain: simpan; jika semua gagal, kirim status terakhir
-    lastStatus = `${res.status} ${res.statusText}`;
-  }
-  return { ok: false, message: lastStatus || 'No matching endpoint' };
-}
-
 /** Hero cantik: Judul, foto Ana, sponsor, featured — glassier */
 function Hero() {
   return (
@@ -297,8 +226,26 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      // Gunakan fallback agar tahan perubahan route BE
-      const json = await postRegisterWithFallback({ eventId, email, name, wa: wa || undefined });
+      // POST ke endpoint BE yang valid
+      const res = await fetch(`${API_BASE}/api/register-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId, email, name, wa }),
+      });
+
+      // Jika non-2xx, coba baca pesan error dari body
+      if (!res.ok) {
+        let msg = 'Gagal memproses pendaftaran.';
+        try {
+          const t = await res.text();
+          if (t) msg = t;
+        } catch { /* noop */ }
+        openToast(<div>{msg}</div>, 'error');
+        setSubmitting(false);
+        return;
+      }
+
+      const json: ReqResp = await res.json();
 
       if (json?.ok && json.request) {
         const src = json.request.source;
