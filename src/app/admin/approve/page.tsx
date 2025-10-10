@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { getPendingRequests } from '@/lib/approveApi'; // tetap pakai list dari approveApi
 import type { GetPendingParams, Registrant, RegistrantList } from '@/lib/approveApi';
 
-import { confirmRequest, fetchPool } from '@/lib/queueApi';
+import { confirmRequest, fetchPool, donateToWalkin } from '@/lib/queueApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || '';
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || '';
@@ -77,11 +77,10 @@ function fmtCode(code: string) {
   return code.replace('AH-', 'AH');
 }
 
-// ---------- Safe access helpers (hindari `any`) ----------
+// ---------- Safe access helpers ----------
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
-
 function getString(obj: unknown, key: string): string | undefined {
   if (isRecord(obj)) {
     const v = obj[key];
@@ -89,7 +88,6 @@ function getString(obj: unknown, key: string): string | undefined {
   }
   return undefined;
 }
-
 function getNumber(obj: unknown, key: string): number | undefined {
   if (isRecord(obj)) {
     const v = obj[key];
@@ -97,15 +95,6 @@ function getNumber(obj: unknown, key: string): number | undefined {
   }
   return undefined;
 }
-
-function getBoolean(obj: unknown, key: string): boolean | undefined {
-  if (isRecord(obj)) {
-    const v = obj[key];
-    if (typeof v === 'boolean') return v;
-  }
-  return undefined;
-}
-
 function getOptionalString(obj: unknown, key: string): string | undefined {
   return getString(obj, key);
 }
@@ -121,7 +110,7 @@ function toErrorMessage(err: unknown): string {
   return 'Unknown error';
 }
 
-// ---------- types agar longgar ----------
+// ---------- types longgar ----------
 type RegistrantLite = Registrant & {
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -204,9 +193,6 @@ function toUI(reg: Registrant | RegistrantLite): UIRegistrant {
     getString(reg, 'status') ||
     'PENDING';
 
-  const isMasterMatchRaw =
-    (typeof getBoolean(reg, 'isMasterMatch') === 'boolean' ? getBoolean(reg, 'isMasterMatch') : undefined) ?? null;
-
   const quotaRemainingRaw =
     (typeof (reg as RegistrantLite).quotaRemaining === 'number' ? (reg as RegistrantLite).quotaRemaining : undefined) ??
     getNumber(reg, 'quotaRemaining');
@@ -219,7 +205,7 @@ function toUI(reg: Registrant | RegistrantLite): UIRegistrant {
     wa: waRaw,
     source: sourceRaw,
     status: statusRaw,
-    isMasterMatch: isMasterMatchRaw,
+    isMasterMatch: null,
     masterQuota: masterQuota ?? null,
     issuedBefore: issuedBefore ?? null,
     quotaRemaining: typeof quotaRemainingRaw === 'number' ? quotaRemainingRaw : computedRemaining,
@@ -239,6 +225,7 @@ export default function ApprovePage() {
   const [q, setQ] = useState('');
 
   const [poolRemaining, setPoolRemaining] = useState<number | null>(null);
+  const [donationCount, setDonationCount] = useState<number | null>(null); // ditampilkan jika tersedia
   const [loading, setLoading] = useState(false);
 
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -259,6 +246,15 @@ export default function ApprovePage() {
     try {
       const r = await fetchPool();
       setPoolRemaining(typeof r.pool === 'number' ? r.pool : null);
+      const dn =
+        typeof (r as any).donation === 'number'
+          ? (r as any).donation
+          : typeof (r as any).donated === 'number'
+          ? (r as any).donated
+          : typeof (r as any).donations === 'number'
+          ? (r as any).donations
+          : null;
+      setDonationCount(dn);
     } catch {
       // diam
     }
@@ -346,6 +342,28 @@ export default function ApprovePage() {
     }
   }
 
+  async function donateOne(id: string) {
+    const count = Math.max(1, counts[id] ?? 1);
+    try {
+      const res = await donateToWalkin(id, count, eventId);
+      if (res) {
+        setToastType('success');
+        setToastMsg(`Donasi ${count} ke Walk-in berhasil`);
+        setToastOpen(true);
+        await fetchData();
+        await refreshPool();
+      } else {
+        setToastType('error');
+        setToastMsg('Donasi tercatat tapi respons tidak terbaca.');
+        setToastOpen(true);
+      }
+    } catch (e: unknown) {
+      setToastType('error');
+      setToastMsg(toErrorMessage(e) || 'Gagal donasi.');
+      setToastOpen(true);
+    }
+  }
+
   async function loadMore() {
     const nextOffset = offset + limit;
     await fetchData({ append: true, customOffset: nextOffset });
@@ -362,6 +380,11 @@ export default function ApprovePage() {
           <h1 className="text-xl font-extrabold">Approve Registrasi</h1>
           <div className="rounded-xl border border-rose-100 bg-white px-3 py-1.5 text-xs">
             Pool sisa: <b>{poolRemaining ?? '—'}</b>
+            {typeof donationCount === 'number' && (
+              <>
+                {' '}&bull; Donation: <b>{donationCount}</b>
+              </>
+            )}
           </div>
         </div>
 
@@ -429,6 +452,11 @@ export default function ApprovePage() {
           {items.map((it) => {
             const def = Math.max(1, counts[it.id] ?? 1);
             const isPending = it.status === 'PENDING';
+
+            // batas maksimal: sisa quota registrant jika MASTER, selain itu bebas (9999)
+            const max = it.source === 'MASTER' ? (it.quotaRemaining ?? 0) : 9999;
+            const canAct = isPending && max > 0;
+
             return (
               <div key={it.id} className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm">
                 <div className="mb-2 flex items-start justify-between gap-3">
@@ -437,12 +465,13 @@ export default function ApprovePage() {
                     <div className="text-xs text-slate-500">{it.email}</div>
                     {it.wa && <div className="text-[11px] text-slate-400">WA: {it.wa}</div>}
                   </div>
-                  <span className="rounded-lg border border-rose-200 bg-rose-50/60 px-2 py-1 text-[11px]">{it.source}</span>
+                  <span className="rounded-lg border border-rose-200 bg-rose-50/60 px-2 py-1 text-[11px]">
+                    {it.source}
+                  </span>
                 </div>
 
                 <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
                   <div>
-                    {' '}
                     Dibuat:{' '}
                     <b className="text-slate-700">{new Date(it.createdAt).toLocaleString()}</b>
                   </div>
@@ -453,14 +482,15 @@ export default function ApprovePage() {
 
                 <div className="mb-3 flex items-center justify-between">
                   <div className="text-xs text-slate-600">
-                    Quota MASTER: <b>{it.source === 'MASTER' ? it.quotaRemaining : '—'}</b>
+                    Quota MASTER:{' '}
+                    <b>{it.source === 'MASTER' ? it.quotaRemaining : '—'}</b>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
                       onClick={() => decCount(it.id)}
-                      disabled={!isPending}
+                      disabled={!canAct}
                     >
                       –
                     </button>
@@ -472,19 +502,17 @@ export default function ApprovePage() {
                       onChange={(e) =>
                         setCounts((m) => ({
                           ...m,
-                          [it.id]: Math.max(1, Number(e.target.value || 1)),
+                          [it.id]: Math.max(1, Math.min(Number(e.target.value || 1), max)),
                         }))
                       }
                       className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
-                      disabled={!isPending}
+                      disabled={!canAct}
                     />
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() =>
-                        incCount(it.id, it.source === 'MASTER' ? it.quotaRemaining ?? undefined : 9999)
-                      }
-                      disabled={!isPending}
+                      onClick={() => incCount(it.id, max)}
+                      disabled={!canAct}
                     >
                       +
                     </button>
@@ -493,12 +521,23 @@ export default function ApprovePage() {
 
                 <div className="flex items-center justify-end gap-2">
                   {isPending ? (
-                    <button
-                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-95"
-                      onClick={() => void confirmOne(it.id)}
-                    >
-                      Confirm
-                    </button>
+                    <>
+                      <button
+                        className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:bg-slate-200 disabled:text-slate-500"
+                        disabled={!canAct}
+                        onClick={() => void confirmOne(it.id)}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:border-slate-200 disabled:text-slate-500 disabled:bg-white"
+                        disabled={!canAct}
+                        onClick={() => void donateOne(it.id)}
+                        title="Tambah ke pool Walk-in (tanpa menerbitkan tiket)"
+                      >
+                        Donate
+                      </button>
+                    </>
                   ) : (
                     <span className="text-[11px] text-slate-400">Sudah diproses</span>
                   )}
