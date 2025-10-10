@@ -5,7 +5,6 @@ import { getPendingRequests } from '@/lib/approveApi';
 import type { GetPendingParams, Registrant, RegistrantList } from '@/lib/approveApi';
 import { confirmRequest, fetchPool } from '@/lib/queueApi';
 
-
 const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || '';
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || '';
 
@@ -33,6 +32,20 @@ type RegistrantsResponseNormalized = {
   total: number;
   limit: number;
   offset: number;
+};
+
+// ==== Local result type agar aman baca field opsional dari BE ====
+type ConfirmResult = {
+  ok: boolean;
+  error?: string;
+  ticket?: { code?: string; status?: string; name?: string; email?: string };
+  allocatedRange?: { from: number; to: number };
+  count?: number;
+  codes?: string[];
+  leftover?: number;
+  donatedAll?: boolean;
+  source?: string | null;
+  remainingBefore?: number | null;
 };
 
 function Toast({
@@ -249,7 +262,7 @@ export default function ApprovePage() {
   }
 
   function normalizeResponse(list: RegistrantList, limitIn: number, offsetIn: number): RegistrantsResponseNormalized {
-    const rows = (list.data ?? []).map((reg) => toUI(reg as RegistrantLite));
+    const rows = (list.data ?? []).map((reg: Registrant | RegistrantLite) => toUI(reg as RegistrantLite));
     const totalN = typeof list.total === 'number' ? list.total : rows.length;
     return {
       items: rows,
@@ -273,7 +286,7 @@ export default function ApprovePage() {
       };
       const list = await getPendingRequests(params);
       const n = normalizeResponse(list, limit, params.offset ?? 0);
-      setItems((prev) => (opts?.append ? [...prev, ...n.items] : n.items));
+      setItems((prev: UIRegistrant[]) => (opts?.append ? [...prev, ...n.items] : n.items));
       setTotal(n.total);
       setLimit(n.limit);
       setOffset(n.offset);
@@ -295,12 +308,12 @@ export default function ApprovePage() {
   async function confirmOne(id: string) {
     const count = Math.max(0, counts[id] ?? 0); // izinkan 0 (donate-all)
     try {
-      const res = await confirmRequest(id, count);
+      const res = (await confirmRequest(id, count)) as ConfirmResult;
 
       // 1) Walk-in: pool kosong / tidak cukup
       if (!res.ok) {
         setToastType('error');
-        setToastMsg(res.error || 'Gagal konfirmasi.');
+        setToastMsg(typeof res.error === 'string' ? res.error : 'Gagal konfirmasi.');
         setToastOpen(true);
         return;
       }
@@ -424,7 +437,7 @@ export default function ApprovePage() {
             </div>
           )}
 
-          {items.map((it) => {
+          {items.map((it: UIRegistrant) => {
             const max = it.source === 'MASTER' ? (it.quotaRemaining ?? 0) : 9999;
             // default UI tetap 1, tapi bisa jadi 0; clamp 0..max
             const def = clamp0toMax(counts[it.id] ?? 1, max);
@@ -462,7 +475,12 @@ export default function ApprovePage() {
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() => setCounts((m) => ({ ...m, [it.id]: clamp0toMax(def - 1, max) }))}
+                      onClick={() =>
+                        setCounts((m: Record<string, number>) => ({
+                          ...m,
+                          [it.id]: clamp0toMax((m[it.id] ?? def) - 1, max),
+                        }))
+                      }
                       disabled={!canAct}
                     >
                       –
@@ -473,7 +491,10 @@ export default function ApprovePage() {
                       step={1}
                       value={def}
                       onChange={(e) =>
-                        setCounts((m) => ({ ...m, [it.id]: clamp0toMax(Number(e.target.value || 0), max) }))
+                        setCounts((m: Record<string, number>) => ({
+                          ...m,
+                          [it.id]: clamp0toMax(Number(e.target.value || 0), max),
+                        }))
                       }
                       className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
                       disabled={!canAct}
@@ -481,7 +502,12 @@ export default function ApprovePage() {
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() => setCounts((m) => ({ ...m, [it.id]: clamp0toMax(def + 1, max) }))}
+                      onClick={() =>
+                        setCounts((m: Record<string, number>) => ({
+                          ...m,
+                          [it.id]: clamp0toMax((m[it.id] ?? def) + 1, max),
+                        }))
+                      }
                       disabled={!canAct}
                     >
                       +
@@ -527,7 +553,7 @@ export default function ApprovePage() {
           <div className="w-full max-w-sm rounded-2xl border border-rose-100 bg-white p-6 shadow-xl">
             <h3 className="mb-3 text-base font-bold">Nomor Antrean</h3>
             <div className="grid grid-cols-3 gap-2">
-              {issuedCodes.map((c) => (
+              {issuedCodes.map((c: string) => (
                 <div
                   key={c}
                   className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-center font-semibold text-[#7a0f2b]"
