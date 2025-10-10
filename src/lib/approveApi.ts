@@ -1,18 +1,24 @@
 // src/lib/approveApi.ts
-/**
- * Catatan:
- * - Tetap expose tiga fungsi yang dipakai page.tsx:
- *   getPendingRequests, approveRequest, rejectRequest
- * - getPendingRequests sekarang punya fallback berantai (beberapa kandidat route),
- *   agar tidak 404 ketika BE rename endpoint.
- * - approveRequest menambahkan eventId (sesuai catatanmu).
- * - rejectRequest dibiarkan hit /api/register-reject; kalau 404/501 akan throw
- *   dan nanti UI bisa tangani (tidak bikin build gagal).
- */
 
 const RAW_BASE = process.env.NEXT_PUBLIC_QUEUE_API ?? '';
 const BASE = RAW_BASE.replace(/\/+$/, '');
 const EVENT = process.env.NEXT_PUBLIC_EVENT_ID || 'seed-event';
+
+export interface Registrant {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  source?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RegistrantList {
+  data: Registrant[];
+  total?: number;
+}
 
 type HttpOk<T> = { ok: true; data: T };
 type HttpErr = { ok: false; status: number; msg: string };
@@ -23,30 +29,53 @@ async function httpGet<T>(url: string): Promise<HttpOk<T> | HttpErr> {
   return { ok: true, data: (await r.json()) as T };
 }
 
-async function httpPost<T>(url: string, body: unknown): Promise<HttpOk<T> | HttpErr> {
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) return { ok: false, status: r.status, msg: await safeText(r) };
-  return { ok: true, data: (await r.json()) as T };
-}
-
 async function safeText(r: Response) {
   try { return await r.text(); } catch { return ''; }
 }
 
-async function throwWithBody(res: Response) {
-  const text = await res.text().catch(() => '<no body>');
-  throw new Error(`${res.status} ${res.statusText} → ${text}`);
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
 }
 
-/** =========================
- *  GET pending requests (Approve List)
- *  ========================= */
-export async function getPendingRequests() {
-  // kandidat route untuk kompatibilitas BE lama/baru
+function pickArray(v: unknown, key: 'data' | 'items'): unknown[] | null {
+  if (!isObj(v)) return null;
+  const val = v[key];
+  return Array.isArray(val) ? val : null;
+}
+
+function pickNum(v: unknown, key: 'total' | 'count'): number | undefined {
+  if (!isObj(v)) return undefined;
+  const n = v[key];
+  return typeof n === 'number' ? n : undefined;
+}
+
+function normalizeRegistrantList(input: unknown): RegistrantList {
+  // 1) Bentuk { data: [] }
+  const asData = pickArray(input, 'data');
+  if (asData) {
+    return {
+      data: asData as Registrant[],
+      total: pickNum(input, 'total') ?? pickNum(input, 'count') ?? asData.length,
+    };
+  }
+  // 2) Bentuk { items: [] }
+  const asItems = pickArray(input, 'items');
+  if (asItems) {
+    return {
+      data: asItems as Registrant[],
+      total: pickNum(input, 'total') ?? pickNum(input, 'count') ?? asItems.length,
+    };
+  }
+  // 3) Bentuk [] langsung
+  if (Array.isArray(input)) {
+    return { data: input as Registrant[], total: input.length };
+  }
+  // 4) Default kosong
+  return { data: [], total: 0 };
+}
+
+/** Get pending requests (Approve List) dengan fallback beberapa route. */
+export async function getPendingRequests(): Promise<RegistrantList> {
   const qs = new URLSearchParams({
     eventId: EVENT,
     status: 'PENDING',
@@ -56,37 +85,21 @@ export async function getPendingRequests() {
   });
 
   const candidates = [
-    '/api/registrants',        // lama (saat ini 404 di env-mu)
+    '/api/registrants',        // lama (saat ini 404 di env kamu)
     '/api/register-request',   // kemungkinan baru
     '/api/register/requests',  // variasi
     '/api/registrations',      // variasi lain
-    '/api/register-queue',     // fallback sesuai file aslimu
+    '/api/register-queue',     // fallback sesuai file lama
   ];
 
   let lastErr: HttpErr | null = null;
 
   for (const path of candidates) {
     const url = `${BASE}${path}?${qs.toString()}`;
-    const res = await httpGet<any>(url);
+    const res = await httpGet<unknown>(url);
     if (res.ok) {
-      const raw = res.data as any;
-
-      // Normalisasi payload → { data, total }
-      const data =
-        raw?.data ??
-        raw?.items ??
-        raw?.results ??
-        raw?.rows ??
-        (Array.isArray(raw) ? raw : []);
-
-      const total =
-        raw?.total ??
-        raw?.count ??
-        (Array.isArray(data) ? data.length : undefined);
-
-      return { data, total };
+      return normalizeRegistrantList(res.data);
     }
-    // simpan error & lanjut kandidat berikut
     lastErr = res;
     if (res.status === 401 || res.status === 403) break;
   }
@@ -96,33 +109,30 @@ export async function getPendingRequests() {
   throw new Error(`[getPendingRequests] failed (${s}): ${m}`);
 }
 
-/** =========================
- *  POST approve request
- *  ========================= */
+/** Approve request */
 export async function approveRequest(id: string, useCount: number = 1) {
   const res = await fetch(`${BASE}/api/register-confirm`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ requestId: id, useCount, eventId: EVENT }),
   });
-  if (!res.ok) await throwWithBody(res);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '<no body>');
+    throw new Error(`${res.status} ${res.statusText} → ${text}`);
+  }
   return res.json();
 }
 
-/** =========================
- *  POST reject request
- *  =========================
- *  Biarkan throw kalau BE belum menyediakan route ini.
- */
+/** Reject request (akan throw jika route BE belum ada) */
 export async function rejectRequest(id: string) {
   const res = await fetch(`${BASE}/api/register-reject`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requestId: id, eventId: EVENT, reason: 'Rejected from UI' }),
   });
-  if (!res.ok) await throwWithBody(res);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '<no body>');
+    throw new Error(`${res.status} ${res.statusText} → ${text}`);
+  }
   return res.json();
 }

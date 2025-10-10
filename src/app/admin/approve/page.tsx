@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getPendingRequests, approveRequest, rejectRequest } from '@/lib/approveApi';
+import type { RegistrantList, Registrant } from '@/lib/approveApi';
 
 type Req = {
   id: string;
@@ -10,6 +11,12 @@ type Req = {
   code?: string | null;
   createdAt?: string | null;
 };
+// tipe bantu untuk menoleransi payload lama yang mungkin punya 'name' / 'code'
+type MaybeLegacyRegistrant = Registrant & {
+  name?: string | null;
+  code?: string | null;
+};
+
 
 function errorMessage(e: unknown): string {
   if (e && typeof e === 'object' && 'message' in e) {
@@ -26,21 +33,43 @@ export default function ApprovePage() {
   const timer = useRef<number | null>(null);
 
   const load = async (): Promise<void> => {
-    try {
-      const payload = await getPendingRequests();
-      const data = (payload as any)?.data ?? (payload as any)?.items ?? payload ?? [];
-      const items: Req[] = Array.isArray(data) ? data : [];
-      const total: number = (payload as any)?.total ?? items.length;
+  try {
+    const payload: RegistrantList = await getPendingRequests();
 
-setList(items);
+    // payload sudah bertipe { data: Registrant[]; total?: number }
+    // kita toleransi kemungkinan field lama: name / code
+    const raw: MaybeLegacyRegistrant[] = (payload.data ?? []) as MaybeLegacyRegistrant[];
 
-      setError(null);
-    } catch (e: unknown) {
-      setError(errorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  };
+    const items: Req[] = raw.map((r) => {
+      // rakit 'name' dari firstName + lastName jika field name lama tidak ada
+      const composedName = [
+        
+        (r as Registrant).firstName ?? '',
+        
+        (r as Registrant).lastName ?? '',
+      ]
+        .map((s) => (typeof s === 'string' ? s.trim() : ''))
+        .filter(Boolean)
+        .join(' ')
+        || null;
+
+      return {
+        id: r.id,
+        name: (typeof r.name === 'string' && r.name.trim().length > 0) ? r.name : composedName,
+        email: typeof r.email === 'string' ? r.email : null,
+        code: typeof r.code === 'string' ? r.code : null,
+        createdAt: typeof r.createdAt === 'string' ? r.createdAt : null,
+      };
+    });
+
+    setList(items);
+    setError(null);
+  } catch (e: unknown) {
+    setError(errorMessage(e));
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     void load();
