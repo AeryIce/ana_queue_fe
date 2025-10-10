@@ -3,9 +3,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   getPendingRequests,
-  approveRequest,
-} from '@/lib/approveApi';
+} from '@/lib/approveApi'; // tetap pakai list dari approveApi
 import type { GetPendingParams, Registrant, RegistrantList } from '@/lib/approveApi';
+
+import { confirmRequest, fetchPool } from '@/lib/queueApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || '';
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || '';
@@ -35,8 +36,6 @@ type RegistrantsResponseNormalized = {
   limit: number;
   offset: number;
 };
-
-type PoolResponse = { ok: boolean; poolRemaining?: number | null };
 
 function Toast({
   open,
@@ -88,43 +87,60 @@ function getOptionalString(obj: unknown, key: string): string | undefined {
   }
   return undefined;
 }
+
 // ——— helpers ———
+// Longgarkan tipe agar kompatibel dengan API yang bisa return null.
+type RegistrantLite = Registrant & {
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  quotaRemaining?: number | null;
+};
+
 function buildName(r: Registrant): string {
   const name =
     typeof r.name === 'string' && r.name.trim().length > 0 ? r.name.trim() : null;
   if (name) return name;
-  const first = typeof r.firstName === 'string' ? r.firstName.trim() : '';
-  const last = typeof r.lastName === 'string' ? r.lastName.trim() : '';
+  const first = typeof (r as any).firstName === 'string' ? (r as any).firstName.trim() : '';
+  const last = typeof (r as any).lastName === 'string' ? (r as any).lastName.trim() : '';
   const composed = [first, last].filter(Boolean).join(' ');
   return composed || (r.email ?? r.id ?? '').toString();
 }
 
-function toUI(reg: Registrant): UIRegistrant {
-  const masterQuota = typeof reg.masterQuota === 'number' ? reg.masterQuota : 0;
-  const issuedBefore = typeof reg.issuedBefore === 'number' ? reg.issuedBefore : 0;
-  const computedRemaining = Math.max(0, masterQuota - issuedBefore);
-
-  const evId = getOptionalString(reg, 'eventId'); // aman tanpa any
-
-  return {
-    id: reg.id,
-    eventId: evId,
-    email: reg.email ?? '',
-    name: buildName(reg),
-    wa: reg.wa ?? null,
-    source: reg.source ?? 'MASTER',
-    status: reg.status ?? 'PENDING',
-    isMasterMatch: reg.isMasterMatch ?? null,
-    masterQuota: reg.masterQuota ?? null,
-    issuedBefore: reg.issuedBefore ?? null,
-    quotaRemaining: reg.quotaRemaining ?? computedRemaining,
-    createdAt: reg.createdAt ?? new Date().toISOString(),
-    updatedAt: reg.updatedAt ?? undefined,
-  };
+function safeIso(d?: string | null): string {
+  try {
+    if (!d) return new Date().toISOString();
+    const t = new Date(d);
+    if (isNaN(t.getTime())) return new Date().toISOString();
+    return t.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
 }
 
+function toUI(reg: RegistrantLite | Registrant): UIRegistrant {
+  const r = reg as RegistrantLite;
 
+  const masterQuota = typeof (r as any).masterQuota === 'number' ? (r as any).masterQuota : 0;
+  const issuedBefore = typeof (r as any).issuedBefore === 'number' ? (r as any).issuedBefore : 0;
+  const computedRemaining = Math.max(0, masterQuota - issuedBefore);
+  const evId = getOptionalString(r as any, 'eventId');
 
+  return {
+    id: (r as any).id,
+    eventId: evId,
+    email: (r as any).email ?? '',
+    name: buildName(r as Registrant),
+    wa: (r as any).wa ?? null,
+    source: (r as any).source ?? 'MASTER',
+    status: (r as any).status ?? 'PENDING',
+    isMasterMatch: (r as any).isMasterMatch ?? null,
+    masterQuota: (r as any).masterQuota ?? null,
+    issuedBefore: (r as any).issuedBefore ?? null,
+    quotaRemaining: (r as any).quotaRemaining ?? computedRemaining,
+    createdAt: safeIso((r as any).createdAt as string | null),
+    updatedAt: (r as any).updatedAt ?? undefined,
+  };
+}
 
 export default function ApprovePage() {
   const [items, setItems] = useState<UIRegistrant[]>([]);
@@ -141,9 +157,6 @@ export default function ApprovePage() {
 
   const [counts, setCounts] = useState<Record<string, number>>({});
 
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [useCount, setUseCount] = useState<number>(1);
-
   const [toastOpen, setToastOpen] = useState(false);
   const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info');
   const [toastMsg, setToastMsg] = useState<string>('');
@@ -156,34 +169,17 @@ export default function ApprovePage() {
     return u.searchParams.get('event') || EVENT_ID;
   }, []);
 
-  async function fetchPool() {
+  async function refreshPool() {
     try {
-      // coba /api/pool dulu
-      const res = await fetch(`${API_BASE}/api/pool?eventId=${encodeURIComponent(eventId)}`);
-      if (res.ok) {
-        const json: PoolResponse = await res.json();
-        if (json?.ok) {
-          setPoolRemaining(typeof json.poolRemaining === 'number' ? json.poolRemaining : null);
-          return;
-        }
-      }
-      // fallback ke /api/snapshot (kamu laporkan 200)
-      const snap = await fetch(`${API_BASE}/api/snapshot?eventId=${encodeURIComponent(eventId)}`);
-      if (snap.ok) {
-        const j = await snap.json();
-        // tidak ada poolRemaining di snapshot; tampilkan jumlah next+active jika mau
-        const count =
-          (Array.isArray(j?.active) ? j.active.length : 0) +
-          (Array.isArray(j?.next) ? j.next.length : 0);
-        setPoolRemaining(Number.isFinite(count) ? count : null);
-      }
+      const r = await fetchPool();
+      setPoolRemaining(typeof r.pool === 'number' ? r.pool : null);
     } catch {
-      // diam2 aja, UI tetap jalan
+      // diam
     }
   }
 
   function normalizeResponse(list: RegistrantList, limitIn: number, offsetIn: number): RegistrantsResponseNormalized {
-    const rows = (list.data ?? []).map(toUI);
+    const rows = (list.data ?? []).map((reg) => toUI(reg as RegistrantLite));
     const totalN = typeof list.total === 'number' ? list.total : rows.length;
     return {
       items: rows,
@@ -218,7 +214,9 @@ export default function ApprovePage() {
 
   useEffect(() => {
     void fetchData();
-    void fetchPool();
+    void refreshPool();
+    const t = setInterval(() => { void refreshPool(); }, 3000);
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, source]);
 
@@ -238,30 +236,24 @@ export default function ApprovePage() {
   }
 
   async function confirmOne(id: string) {
-    const count = Math.max(0, counts[id] ?? 1);
+    const count = Math.max(1, counts[id] ?? 1);
     try {
-      const json: { ok?: boolean; error?: string; message?: string; tickets?: { code: string }[] } =
-        await approveRequest(id, count);
-      if (json?.ok) {
-        const codes = Array.isArray(json.tickets) ? json.tickets.map((t) => t.code) : [];
-        if (codes.length > 0) {
-          setIssuedCodes(codes);
-        } else {
-          setIssuedCodes(null);
-          setToastType('success');
-          setToastMsg('Konfirmasi dicatat. Kuota didonasikan (tanpa tiket).');
-          setToastOpen(true);
-        }
+      const res = await confirmRequest(id, count);
+      if (res?.ok && res.ticket?.code) {
+        setIssuedCodes([res.ticket.code]);
+        setToastType('success');
+        setToastMsg(`Approved: ${res.ticket.code}`);
+        setToastOpen(true);
         await fetchData();
-        await fetchPool();
+        await refreshPool();
       } else {
         setToastType('error');
-        setToastMsg(json?.error || json?.message || 'Gagal konfirmasi.');
+        setToastMsg('Konfirmasi tercatat tapi tiket tidak terbaca.');
         setToastOpen(true);
       }
-    } catch {
+    } catch (e:any) {
       setToastType('error');
-      setToastMsg('Gagal menghubungi server.');
+      setToastMsg(e?.message || 'Gagal konfirmasi.');
       setToastOpen(true);
     }
   }
@@ -331,7 +323,7 @@ export default function ApprovePage() {
           )}
 
           {items.map((it) => {
-            const def = Math.max(0, Math.min(it.source === 'MASTER' ? (it.quotaRemaining || 0) : 0, counts[it.id] ?? 1));
+            const def = Math.max(1, counts[it.id] ?? 1);
             const isPending = it.status === 'PENDING';
             return (
               <div key={it.id} className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm">
@@ -357,10 +349,10 @@ export default function ApprovePage() {
                     <button type="button" className="h-8 w-8 rounded-lg border border-rose-200 text-sm" onClick={() => decCount(it.id)} disabled={!isPending}>–</button>
                     <input
                       type="number"
-                      min={0}
+                      min={1}
                       step={1}
                       value={def}
-                      onChange={(e) => setCounts((m) => ({ ...m, [it.id]: Math.max(0, Number(e.target.value || 0)) }))}
+                      onChange={(e) => setCounts((m) => ({ ...m, [it.id]: Math.max(1, Number(e.target.value || 1)) }))}
                       className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
                       disabled={!isPending}
                     />
@@ -377,7 +369,7 @@ export default function ApprovePage() {
                   {isPending ? (
                     <button
                       className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-95"
-                      onClick={() => confirmOne(it.id)}
+                      onClick={() => void confirmOne(it.id)}
                     >
                       Confirm
                     </button>
@@ -398,31 +390,6 @@ export default function ApprovePage() {
           </div>
         )}
       </div>
-
-      {/* Fallback dialog (desktop) */}
-      {confirmId && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-rose-100 bg-white p-5 shadow-xl">
-            <h3 className="mb-2 text-base font-bold">Konfirmasi Registrasi</h3>
-            <p className="mb-3 text-sm text-slate-600">Tentukan jumlah slot yang dipakai (<code>useCount</code>).</p>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={useCount}
-              onChange={(e) => setUseCount(Math.max(0, Number(e.target.value || 0)))}
-              className="mb-4 w-full rounded-xl border border-rose-200 px-3 py-2 text-sm"
-            />
-            <div className="flex justify-end gap-2">
-              <button className="rounded-xl border px-3 py-2 text-sm" onClick={() => setConfirmId(null)}>Batal</button>
-              <button
-                className="rounded-xl bg-[#7a0f2b] px-3 py-2 text-sm font-semibold text-white"
-                onClick={() => { if (!confirmId) return; void confirmOne(confirmId); setConfirmId(null); }}
-              >Confirm</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal Nomor Antrean */}
       {issuedCodes && (
