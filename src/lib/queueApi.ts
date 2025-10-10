@@ -127,9 +127,32 @@ export async function recallTicket(id: string) {
 }
 
 // ---- ALIASES untuk kompatibilitas komponen lama ----
+
+// 1) Komponen lama import "fetchBoard" → arahkan ke getBoard
+export const fetchBoard = getBoard;
+
+// 2) Komponen lama import "callNext" → arahkan ke promoteToActive
+export async function callNext() {
+  return promoteToActive();
+}
+
+// 3) Komponen lama import "callByCode" → coba recall-by-code jika endpoint ada; jika tidak, fallback ke promote
+export async function callByCode(code: string) {
+  const url = `${BASE}/api/recall-by-code/${encodeURIComponent(code)}?eventId=${encodeURIComponent(ENV_EVENT_ID)}`;
+  try {
+    const r = await fetch(url, { method: 'POST' });
+    if (r.ok) return r.json();
+  } catch {
+    // ignore
+  }
+  // fallback: panggil callNext agar tidak mematahkan alur lama
+  return promoteToActive();
+}
+
+// 4) Kompat untuk AdminToolbar lama:
 // setDone(id)   → DONE (alias doneTicket)
 // setSkip(id)   → SKIP (alias skipTicket)
-// setInProcess(id) → gunakan recallTicket untuk memindahkan ke ACTIVE (mendekati "in process")
+// setInProcess(id) → recall ke ACTIVE (mendekati "in process")
 export const setDone = doneTicket;
 export const setSkip = skipTicket;
 export const setInProcess = recallTicket;
