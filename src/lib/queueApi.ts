@@ -108,12 +108,13 @@ export async function fetchPool(): Promise<PoolResponse> {
 
 // ---- Confirm (legacy payload)
 // ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
+// ---- Confirm (ADMIN approve + donate/allocate)
 export async function confirmRequest(
   requestId: string,
   useCount = 1,
-  eventId?: string
+  eventId?: string // ← NEW: override eventId dari halaman (opsional)
 ) {
-  const EVENT = eventId ?? ENV_EVENT_ID;
+  const EVENT = (eventId || ENV_EVENT_ID);
 
   const res = await fetch(`${BASE}/api/register-confirm`, {
     method: 'POST',
@@ -121,37 +122,29 @@ export async function confirmRequest(
     body: JSON.stringify({
       requestId,
       useCount,
-      eventId: EVENT,   // BE requires eventId
-      //source: 'MASTER', // optional but safe to send
+      eventId: EVENT, // ← pakai event yang benar
     }),
   });
 
-  // Coba parse JSON; kalau gagal, jadikan null supaya bisa ditangani elegan
-  const data = (await res.json().catch(() => null)) as
-    | {
-        ok?: boolean;
-        message?: string;
-        reason?: string;
-        ticket?: { code?: string; status?: string; name?: string; email?: string };
-        allocatedRange?: { from?: number; to?: number };
-        count?: number;
-      }
-    | null;
-
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg =
-      (data?.message || data?.reason || `Approve gagal: ${res.status}`).toString();
+      (data?.error || data?.message || 'Approve gagal').toString();
     throw new Error(msg);
   }
 
-  // Kembalikan data apa adanya dengan tipe longgar yang aman
-  return (data ?? {
-    ok: true,
-  }) as {
+  // Tipe longgar agar aman dengan variasi BE (ticket tunggal / multiple codes)
+  return data as {
     ok: boolean;
+    error?: string;
     ticket?: { code?: string; status?: string; name?: string; email?: string };
+    codes?: string[];
     allocatedRange?: { from: number; to: number };
     count?: number;
+    leftover?: number;
+    donatedAll?: boolean;
+    source?: string | null;
+    remainingBefore?: number | null;
   };
 }
 

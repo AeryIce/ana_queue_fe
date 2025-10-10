@@ -308,7 +308,7 @@ export default function ApprovePage() {
   async function confirmOne(id: string) {
     const count = Math.max(0, counts[id] ?? 0); // izinkan 0 (donate-all)
     try {
-      const res = (await confirmRequest(id, count)) as ConfirmResult;
+      const res = await confirmRequest(id, count, eventId) as ConfirmResult;
 
       // 1) Walk-in: pool kosong / tidak cukup
       if (!res.ok) {
