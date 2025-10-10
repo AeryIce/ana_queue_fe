@@ -10,6 +10,7 @@ export type TicketStatus =
   | 'PENDING'
   | 'QUEUED'
   | 'ACTIVE'
+  | 'IN_PROCESS'
   | 'DONE'
   | 'SKIPPED'
   | 'CALLED'
@@ -64,7 +65,6 @@ export async function fetchPool() {
   const res = await fetch(`${BASE}/api/pool?eventId=${encodeURIComponent(EVENT)}`, { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.reason || 'Gagal memuat pool');
-  // BE kita mengembalikan { ok, eventId, pool }
   return data as { ok: boolean; eventId: string; pool: number; method?: string };
 }
 
@@ -96,7 +96,7 @@ export async function confirmRequest(requestId: string, useCount = 1) {
   };
 }
 
-// ---- (Opsional) Board snapshot sederhana
+// ---- Board snapshot sederhana
 export async function getBoard(eventId?: string): Promise<BoardResponse> {
   const eid = eventId ?? ENV_EVENT_ID;
   const r = await fetch(`${BASE}/api/board?eventId=${encodeURIComponent(eid)}`, { cache: 'no-store' });
@@ -125,3 +125,11 @@ export async function recallTicket(id: string) {
   if (!r.ok) throw new Error(`recall failed: ${r.status}`);
   return r.json();
 }
+
+// ---- ALIASES untuk kompatibilitas komponen lama ----
+// setDone(id)   → DONE (alias doneTicket)
+// setSkip(id)   → SKIP (alias skipTicket)
+// setInProcess(id) → gunakan recallTicket untuk memindahkan ke ACTIVE (mendekati "in process")
+export const setDone = doneTicket;
+export const setSkip = skipTicket;
+export const setInProcess = recallTicket;
