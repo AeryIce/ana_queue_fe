@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { getPendingRequests } from '@/lib/approveApi';
 import type { GetPendingParams, Registrant, RegistrantList } from '@/lib/approveApi';
 import { confirmRequest, fetchPool } from '@/lib/queueApi';
+import type { ConfirmResponse } from '@/lib/queueApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || '';
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || '';
@@ -294,19 +295,19 @@ export default function ApprovePage() {
   async function confirmOne(id: string) {
     const count = Math.max(0, counts[id] ?? 0); // izinkan 0 (donate-all)
     try {
-      const res = await confirmRequest(id, count);
+      const res: ConfirmResponse = await confirmRequest(id, count);
 
       // 1) Walk-in: pool kosong / tidak cukup
-      if (!res?.ok) {
+      if (!res.ok) {
         setToastType('error');
-        // @ts-expect-error: BE mengirim error di ConfirmResponse (sudah ditambahkan di queueApi)
-        setToastMsg(res?.error || 'Gagal konfirmasi.');
+        setToastMsg(res.error || 'Gagal konfirmasi.');
         setToastOpen(true);
         return;
       }
 
       // 2) Donate-all (MASTER, useCount=0)
-      if ((res as any)?.donatedAll || ((res as any)?.count === 0 && (res as any)?.leftover > 0)) {
+      const leftover = typeof res.leftover === 'number' ? res.leftover : 0;
+      if (res.donatedAll || (res.count === 0 && leftover > 0)) {
         setIssuedCodes(null);
         setToastType('success');
         setToastMsg('User melakukan semua donasi kuota.');
@@ -317,12 +318,11 @@ export default function ApprovePage() {
       }
 
       // 3) Terbit tiket: dukung multiple codes
-      const anyRes = res as any;
       const codes: string[] =
-        Array.isArray(anyRes?.codes) && anyRes.codes.length > 0
-          ? anyRes.codes
-          : anyRes?.ticket?.code
-          ? [anyRes.ticket.code]
+        Array.isArray(res.codes) && res.codes.length > 0
+          ? res.codes
+          : res.ticket?.code
+          ? [res.ticket.code]
           : [];
 
       if (codes.length > 0) {
