@@ -119,8 +119,8 @@ export async function confirmRequest(
     body: JSON.stringify({
       requestId,
       useCount,
-      eventId: EVENT,
-      source: 'MASTER',
+      //eventId: EVENT,
+      //source: 'MASTER',
     }),
   });
 

@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { getPendingRequests } from '@/lib/approveApi'; // tetap pakai list dari approveApi
+import { getPendingRequests } from '@/lib/approveApi';
 import type { GetPendingParams, Registrant, RegistrantList } from '@/lib/approveApi';
-
-import { confirmRequest, fetchPool, donateToWalkin } from '@/lib/queueApi';
+import { confirmRequest, fetchPool } from '@/lib/queueApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || '';
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || '';
@@ -77,7 +76,7 @@ function fmtCode(code: string) {
   return code.replace('AH-', 'AH');
 }
 
-// ---------- Safe access helpers ----------
+// ---------- helpers ----------
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
@@ -95,22 +94,15 @@ function getNumber(obj: unknown, key: string): number | undefined {
   }
   return undefined;
 }
-function getOptionalString(obj: unknown, key: string): string | undefined {
-  return getString(obj, key);
-}
-
-// ---------- error helper ----------
-type ApiError = { message?: string; reason?: string; toString?: () => string };
 function toErrorMessage(err: unknown): string {
   if (typeof err === 'string') return err;
   if (isRecord(err)) {
-    const e = err as ApiError;
+    const e = err as { message?: string; reason?: string; toString?: () => string };
     return e.message || e.reason || e.toString?.() || 'Unknown error';
   }
   return 'Unknown error';
 }
 
-// ---------- types longgar ----------
 type RegistrantLite = Registrant & {
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -131,12 +123,10 @@ type RegistrantLite = Registrant & {
 function buildName(r: Registrant | RegistrantLite): string {
   const byName = typeof r.name === 'string' && r.name.trim().length > 0 ? r.name.trim() : null;
   if (byName) return byName;
-
   const first = getString(r, 'firstName')?.trim() || '';
   const last = getString(r, 'lastName')?.trim() || '';
   const composed = [first, last].filter(Boolean).join(' ');
   if (composed) return composed;
-
   const email = typeof r.email === 'string' ? r.email : getString(r, 'email');
   const id = typeof r.id === 'string' ? r.id : getString(r, 'id');
   return email || id || '';
@@ -152,29 +142,12 @@ function safeIso(d?: string | null): string {
     return new Date().toISOString();
   }
 }
-function getNumField(obj: unknown, key: string): number | null {
-  if (typeof obj === 'object' && obj !== null) {
-    const rec = obj as Record<string, unknown>;
-    const v = rec[key];
-    if (typeof v === 'number' && Number.isFinite(v)) return v;
-  }
-  return null;
-}
-
-function pickFirstNumber(obj: unknown, keys: string[]): number | null {
-  for (const k of keys) {
-    const v = getNumField(obj, k);
-    if (v !== null) return v;
-  }
-  return null;
-}
-
 
 function toUI(reg: Registrant | RegistrantLite): UIRegistrant {
   const masterQuota = getNumber(reg, 'masterQuota') ?? 0;
   const issuedBefore = getNumber(reg, 'issuedBefore') ?? 0;
   const computedRemaining = Math.max(0, masterQuota - issuedBefore);
-  const evId = getOptionalString(reg, 'eventId');
+  const evId = getString(reg, 'eventId');
 
   const idRaw =
     (typeof (reg as Registrant).id === 'string' ? (reg as Registrant).id : undefined) ||
@@ -188,12 +161,12 @@ function toUI(reg: Registrant | RegistrantLite): UIRegistrant {
 
   const createdAtRaw =
     (typeof (reg as RegistrantLite).createdAt === 'string' ? (reg as RegistrantLite).createdAt : undefined) ||
-    getOptionalString(reg, 'createdAt') ||
+    getString(reg, 'createdAt') ||
     null;
 
   const updatedAtRaw =
     (typeof (reg as RegistrantLite).updatedAt === 'string' ? (reg as RegistrantLite).updatedAt : undefined) ||
-    getOptionalString(reg, 'updatedAt');
+    getString(reg, 'updatedAt');
 
   const waRaw =
     (typeof (reg as RegistrantLite).wa === 'string' ? (reg as RegistrantLite).wa : undefined) ||
@@ -238,11 +211,10 @@ export default function ApprovePage() {
   const [offset, setOffset] = useState(0);
 
   const [status, setStatus] = useState<ReqStatus>('PENDING');
-  const [source, setSource] = useState<Source>('MASTER'); // default MASTER
+  const [source, setSource] = useState<Source>('MASTER');
   const [q, setQ] = useState('');
 
   const [poolRemaining, setPoolRemaining] = useState<number | null>(null);
-  const [donationCount, setDonationCount] = useState<number | null>(null); // ditampilkan jika tersedia
   const [loading, setLoading] = useState(false);
 
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -260,21 +232,14 @@ export default function ApprovePage() {
   }, []);
 
   async function refreshPool() {
-  try {
-    const r = await fetchPool();
-    // pool
-    const poolVal =
-      typeof r.pool === 'number' ? r.pool : pickFirstNumber(r, ['pool']);
-    setPoolRemaining(typeof poolVal === 'number' ? poolVal : null);
-
-    // donation (donation | donated | donations)
-    const dn = pickFirstNumber(r, ['donation', 'donated', 'donations']);
-    setDonationCount(dn);
-  } catch {
-    // diam
+    try {
+      const r = await fetchPool();
+      const poolVal = typeof r.pool === 'number' ? r.pool : null;
+      setPoolRemaining(poolVal);
+    } catch {
+      // ignore
+    }
   }
-}
-
 
   function normalizeResponse(list: RegistrantList, limitIn: number, offsetIn: number): RegistrantsResponseNormalized {
     const rows = (list.data ?? []).map((reg) => toUI(reg as RegistrantLite));
@@ -313,9 +278,7 @@ export default function ApprovePage() {
   useEffect(() => {
     void fetchData();
     void refreshPool();
-    const t = setInterval(() => {
-      void refreshPool();
-    }, 3000);
+    const t = setInterval(() => { void refreshPool(); }, 3000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, source]);
@@ -323,14 +286,14 @@ export default function ApprovePage() {
   function incCount(id: string, max?: number) {
     setCounts((m) => {
       const cur = m[id] ?? 1;
-      const next = Math.max(0, Math.min(max ?? 9999, cur + 1));
+      const next = Math.max(1, Math.min(max ?? 9999, cur + 1));
       return { ...m, [id]: next };
     });
   }
   function decCount(id: string) {
     setCounts((m) => {
       const cur = m[id] ?? 1;
-      const next = Math.max(0, cur - 1);
+      const next = Math.max(1, cur - 1);
       return { ...m, [id]: next };
     });
   }
@@ -338,7 +301,7 @@ export default function ApprovePage() {
   async function confirmOne(id: string) {
     const count = Math.max(1, counts[id] ?? 1);
     try {
-      const res = await confirmRequest(id, count);
+      const res = await confirmRequest(id, count); // <- useCount = donasi/tiket yang digunakan
       if (res?.ok && res.ticket?.code) {
         setIssuedCodes([res.ticket.code]);
         setToastType('success');
@@ -354,28 +317,6 @@ export default function ApprovePage() {
     } catch (e: unknown) {
       setToastType('error');
       setToastMsg(toErrorMessage(e) || 'Gagal konfirmasi.');
-      setToastOpen(true);
-    }
-  }
-
-  async function donateOne(id: string) {
-    const count = Math.max(1, counts[id] ?? 1);
-    try {
-      const res = await donateToWalkin(id, count, eventId);
-      if (res) {
-        setToastType('success');
-        setToastMsg(`Donasi ${count} ke Walk-in berhasil`);
-        setToastOpen(true);
-        await fetchData();
-        await refreshPool();
-      } else {
-        setToastType('error');
-        setToastMsg('Donasi tercatat tapi respons tidak terbaca.');
-        setToastOpen(true);
-      }
-    } catch (e: unknown) {
-      setToastType('error');
-      setToastMsg(toErrorMessage(e) || 'Gagal donasi.');
       setToastOpen(true);
     }
   }
@@ -396,11 +337,6 @@ export default function ApprovePage() {
           <h1 className="text-xl font-extrabold">Approve Registrasi</h1>
           <div className="rounded-xl border border-rose-100 bg-white px-3 py-1.5 text-xs">
             Pool sisa: <b>{poolRemaining ?? '—'}</b>
-            {typeof donationCount === 'number' && (
-              <>
-                {' '}&bull; Donation: <b>{donationCount}</b>
-              </>
-            )}
           </div>
         </div>
 
@@ -466,11 +402,9 @@ export default function ApprovePage() {
           )}
 
           {items.map((it) => {
-            const def = Math.max(1, counts[it.id] ?? 1);
-            const isPending = it.status === 'PENDING';
-
-            // batas maksimal: sisa quota registrant jika MASTER, selain itu bebas (9999)
             const max = it.source === 'MASTER' ? (it.quotaRemaining ?? 0) : 9999;
+            const def = Math.max(1, Math.min(counts[it.id] ?? 1, max));
+            const isPending = it.status === 'PENDING';
             const canAct = isPending && max > 0;
 
             return (
@@ -498,14 +432,15 @@ export default function ApprovePage() {
 
                 <div className="mb-3 flex items-center justify-between">
                   <div className="text-xs text-slate-600">
-                    Quota MASTER:{' '}
-                    <b>{it.source === 'MASTER' ? it.quotaRemaining : '—'}</b>
+                    Quota MASTER: <b>{it.source === 'MASTER' ? it.quotaRemaining : '—'}</b>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() => decCount(it.id)}
+                      onClick={() =>
+                        setCounts((m) => ({ ...m, [it.id]: Math.max(1, def - 1) }))
+                      }
                       disabled={!canAct}
                     >
                       –
@@ -527,7 +462,9 @@ export default function ApprovePage() {
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() => incCount(it.id, max)}
+                      onClick={() =>
+                        setCounts((m) => ({ ...m, [it.id]: Math.max(1, Math.min(def + 1, max)) }))
+                      }
                       disabled={!canAct}
                     >
                       +
@@ -537,23 +474,14 @@ export default function ApprovePage() {
 
                 <div className="flex items-center justify-end gap-2">
                   {isPending ? (
-                    <>
-                      <button
-                        className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:bg-slate-200 disabled:text-slate-500"
-                        disabled={!canAct}
-                        onClick={() => void confirmOne(it.id)}
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:border-slate-200 disabled:text-slate-500 disabled:bg-white"
-                        disabled={!canAct}
-                        onClick={() => void donateOne(it.id)}
-                        title="Tambah ke pool Walk-in (tanpa menerbitkan tiket)"
-                      >
-                        Donate
-                      </button>
-                    </>
+                    <button
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:bg-slate-200 disabled:text-slate-500"
+                      disabled={!canAct}
+                      onClick={() => void confirmOne(it.id)}
+                      title="Gunakan useCount sesuai input untuk mengeluarkan tiket / donasi"
+                    >
+                      Confirm
+                    </button>
                   ) : (
                     <span className="text-[11px] text-slate-400">Sudah diproses</span>
                   )}
@@ -597,9 +525,7 @@ export default function ApprovePage() {
                 onClick={() => {
                   try {
                     void navigator.clipboard?.writeText(issuedCodes.join(', '));
-                  } catch {
-                    // ignore
-                  }
+                  } catch {}
                 }}
               >
                 Salin
