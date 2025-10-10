@@ -224,6 +224,29 @@ export async function callByCode(code: string): Promise<MutateResponse | BoardRe
   return promoteToActive();
 }
 
+// ---- Donate to Walk-in (tambah pool dari registrant) ----
+export async function donateToWalkin(
+  requestId: string,
+  donateCount = 1,
+  eventId?: string
+): Promise<MutateResponse> {
+  const eid = eventId ?? ENV_EVENT_ID;
+  const r = await fetch(`${BASE}/api/register-donate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ requestId, donateCount, eventId: eid }),
+  });
+  if (!r.ok) {
+    let msg = `donate failed: ${r.status}`;
+    try {
+      const data = (await r.json()) as { message?: string };
+      if (data?.message) msg = data.message;
+    } catch {}
+    throw new Error(msg);
+  }
+  return safeJson<MutateResponse>(r);
+}
+
 // 4) Kompat untuk AdminToolbar lama:
 // setDone(id)   → DONE (alias doneTicket)
 // setSkip(id)   → SKIP (alias skipTicket)
