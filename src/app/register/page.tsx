@@ -124,6 +124,29 @@ function SponsorStrip() {
   );
 }
 
+/* =========================
+   Helpers kecil
+   ========================= */
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+type Ticket = { code: string };
+type RegisterServiceResp = {
+  message?: string;
+  tickets?: Ticket[];
+  issued?: number;
+  quota?: number;
+  remaining?: number;
+};
+
+function looksLikeRegisterServiceResp(j: unknown): j is RegisterServiceResp {
+  if (!isObject(j)) return false;
+  if ('tickets' in j && Array.isArray((j as Record<string, unknown>).tickets)) return true;
+  return false;
+}
+
 /** Hero cantik: Judul, foto Ana, sponsor, featured — glassier */
 function Hero() {
   return (
@@ -226,27 +249,87 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      // POST ke endpoint BE yang valid
-      const res = await fetch(`${API_BASE}/api/register-request`, {
+      // Endpoint BE yang benar: POST /api/register (RegisterController)
+      const res = await fetch(`${API_BASE}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventId, email, name, wa }),
+        body: JSON.stringify({ eventId, email, wa }),
       });
 
-      // Jika non-2xx, coba baca pesan error dari body
       if (!res.ok) {
+        // 404 dari BE biasanya NotFoundException (mis. email bukan master)
         let msg = 'Gagal memproses pendaftaran.';
         try {
           const t = await res.text();
           if (t) msg = t;
-        } catch { /* noop */ }
+        } catch {}
         openToast(<div>{msg}</div>, 'error');
         setSubmitting(false);
         return;
       }
 
-      const json: ReqResp = await res.json();
+      // FE harus tahan 2 bentuk respons:
+      // a) Bentuk lama (ReqResp) dgn request, ok, dedup, dll
+      // b) Bentuk baru (RegisterServiceResp) dgn tickets, message, dll
+      const raw = (await res.json()) as unknown;
 
+      // b) Respons dari RegisterService (langsung confirmed dan punya tickets)
+      if (looksLikeRegisterServiceResp(raw)) {
+        const tickets = Array.isArray(raw.tickets) ? raw.tickets : [];
+        const codes = tickets.map((t) => String(t.code || ''));
+        openToast(
+          <div>
+            <div className="font-semibold">Terima kasih! Email kamu sudah terdaftar.</div>
+            {codes.length > 0 ? (
+              <div className="mt-1">
+                Nomor antreanmu:
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {codes.map((c) => (
+                    <span
+                      key={c}
+                      className="inline-block rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-800"
+                    >
+                      {String(c).replace('AH-', 'AH')}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-1 text-slate-600">
+                Nomor antreanmu akan tampil di layar saat giliran mendekat.
+              </div>
+            )}
+            <div className="mt-3 flex flex-col gap-2">
+              <a
+                href={RUN_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block rounded-xl bg-[#7a0f2b] px-3 py-2 text-center text-xs font-semibold text-white"
+              >
+                Cek Running Queue
+              </a>
+              <a
+                href={periplusUrl('master')}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block rounded-xl border border-rose-200 bg-white px-3 py-2 text-center text-xs"
+              >
+                Belanja buku di Periplus
+              </a>
+            </div>
+            <PromoBanner href={periplusUrl('master')} />
+          </div>,
+          'success',
+        );
+        setEmail('');
+        setName('');
+        setWa('');
+        setSubmitting(false);
+        return;
+      }
+
+      // a) Respons lama (ReqResp)
+      const json: ReqResp = isObject(raw) ? (raw as ReqResp) : {};
       if (json?.ok && json.request) {
         const src = json.request.source;
         const stat = json.request.status;
@@ -377,8 +460,9 @@ export default function RegisterPage() {
         }
       }
 
+      // Jika tidak cocok bentuk apa pun
       openToast(
-        <div>{json?.error || json?.message || 'Gagal memproses pendaftaran.'}</div>,
+        <div>{(isObject(raw) && typeof (raw as { message?: string }).message === 'string') ? (raw as { message?: string }).message : 'Gagal memproses pendaftaran.'}</div>,
         'error',
       );
     } catch {
