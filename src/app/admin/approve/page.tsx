@@ -308,31 +308,56 @@ export default function ApprovePage() {
   }
 
   async function confirmOne(id: string) {
-    // clamp ke 0..max saat kirim
-    const item = items.find((x) => x.id === id);
-    const max = item?.source === 'MASTER' ? (item?.quotaRemaining ?? 0) : 9999;
-    const count = clamp0toMax(counts[id] ?? 1, max);
+  const count = Math.max(0, counts[id] ?? 0); // ← izinkan 0 (donate-all)
+  try {
+    const res = await confirmRequest(id, count);
 
-    try {
-      const res = await confirmRequest(id, count, eventId); // useCount bisa 0..max
-      if (res?.ok && res.ticket?.code) {
-        setIssuedCodes([res.ticket.code]);
-        setToastType('success');
-        setToastMsg(`Approved: ${res.ticket.code}`);
-        setToastOpen(true);
-        await fetchData();
-        await refreshPool();
-      } else {
-        setToastType('error');
-        setToastMsg('Konfirmasi tercatat tapi tiket tidak terbaca.');
-        setToastOpen(true);
-      }
-    } catch (e: unknown) {
+    // 1) Walk-in: pool kosong / tidak cukup
+    if (!res?.ok) {
       setToastType('error');
-      setToastMsg(toErrorMessage(e) || 'Gagal konfirmasi.');
+      setToastMsg(res?.error || 'Gagal konfirmasi.');
+      setToastOpen(true);
+      return;
+    }
+
+    // 2) Donate-all (MASTER, useCount=0)
+    if (res?.donatedAll || (res?.count === 0 && res?.leftover > 0)) {
+      setIssuedCodes(null);
+      setToastType('success');
+      setToastMsg('User melakukan semua donasi kuota.');
+      setToastOpen(true);
+      await fetchData();
+      await refreshPool();
+      return;
+    }
+
+    // 3) Terbit tiket: dukung multiple codes
+    const codes: string[] =
+      Array.isArray(res?.codes) && res.codes.length > 0
+        ? res.codes
+        : res?.ticket?.code
+        ? [res.ticket.code]
+        : [];
+
+    if (codes.length > 0) {
+      setIssuedCodes(codes);
+      setToastType('success');
+      setToastMsg(`Approved: ${codes.join(', ')}`);
+      setToastOpen(true);
+      await fetchData();
+      await refreshPool();
+    } else {
+      // fallback lama (harusnya tidak kena dengan BE baru)
+      setToastType('error');
+      setToastMsg('Konfirmasi tercatat tapi tiket tidak terbaca.');
       setToastOpen(true);
     }
+  } catch (e: unknown) {
+    setToastType('error');
+    setToastMsg(toErrorMessage(e) || 'Gagal konfirmasi.');
+    setToastOpen(true);
   }
+}
 
   async function loadMore() {
     const nextOffset = offset + limit;
