@@ -1,9 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  getPendingRequests,
-} from '@/lib/approveApi'; // tetap pakai list dari approveApi
+import { getPendingRequests } from '@/lib/approveApi'; // tetap pakai list dari approveApi
 import type { GetPendingParams, Registrant, RegistrantList } from '@/lib/approveApi';
 
 import { confirmRequest, fetchPool } from '@/lib/queueApi';
@@ -79,31 +77,80 @@ function fmtCode(code: string) {
   return code.replace('AH-', 'AH');
 }
 
-function getOptionalString(obj: unknown, key: string): string | undefined {
-  if (typeof obj === 'object' && obj !== null) {
-    const rec = obj as Record<string, unknown>;
-    const val = rec[key];
-    if (typeof val === 'string') return val;
+// ---------- Safe access helpers (hindari `any`) ----------
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+function getString(obj: unknown, key: string): string | undefined {
+  if (isRecord(obj)) {
+    const v = obj[key];
+    if (typeof v === 'string') return v;
   }
   return undefined;
 }
 
-// ——— helpers ———
-// Longgarkan tipe agar kompatibel dengan API yang bisa return null.
+function getNumber(obj: unknown, key: string): number | undefined {
+  if (isRecord(obj)) {
+    const v = obj[key];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+  }
+  return undefined;
+}
+
+function getBoolean(obj: unknown, key: string): boolean | undefined {
+  if (isRecord(obj)) {
+    const v = obj[key];
+    if (typeof v === 'boolean') return v;
+  }
+  return undefined;
+}
+
+function getOptionalString(obj: unknown, key: string): string | undefined {
+  return getString(obj, key);
+}
+
+// ---------- error helper ----------
+type ApiError = { message?: string; reason?: string; toString?: () => string };
+function toErrorMessage(err: unknown): string {
+  if (typeof err === 'string') return err;
+  if (isRecord(err)) {
+    const e = err as ApiError;
+    return e.message || e.reason || e.toString?.() || 'Unknown error';
+  }
+  return 'Unknown error';
+}
+
+// ---------- types agar longgar ----------
 type RegistrantLite = Registrant & {
   createdAt?: string | null;
   updatedAt?: string | null;
   quotaRemaining?: number | null;
+  masterQuota?: number | null;
+  issuedBefore?: number | null;
+  eventId?: string | null;
+  wa?: string | null;
+  source?: string | null;
+  status?: string | null;
+  id?: string | null;
+  email?: string | null;
+  name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
 };
 
-function buildName(r: Registrant): string {
-  const name =
-    typeof r.name === 'string' && r.name.trim().length > 0 ? r.name.trim() : null;
-  if (name) return name;
-  const first = typeof (r as any).firstName === 'string' ? (r as any).firstName.trim() : '';
-  const last = typeof (r as any).lastName === 'string' ? (r as any).lastName.trim() : '';
+function buildName(r: Registrant | RegistrantLite): string {
+  const byName = typeof r.name === 'string' && r.name.trim().length > 0 ? r.name.trim() : null;
+  if (byName) return byName;
+
+  const first = getString(r, 'firstName')?.trim() || '';
+  const last = getString(r, 'lastName')?.trim() || '';
   const composed = [first, last].filter(Boolean).join(' ');
-  return composed || (r.email ?? r.id ?? '').toString();
+  if (composed) return composed;
+
+  const email = typeof r.email === 'string' ? r.email : getString(r, 'email');
+  const id = typeof r.id === 'string' ? r.id : getString(r, 'id');
+  return email || id || '';
 }
 
 function safeIso(d?: string | null): string {
@@ -117,28 +164,67 @@ function safeIso(d?: string | null): string {
   }
 }
 
-function toUI(reg: RegistrantLite | Registrant): UIRegistrant {
-  const r = reg as RegistrantLite;
-
-  const masterQuota = typeof (r as any).masterQuota === 'number' ? (r as any).masterQuota : 0;
-  const issuedBefore = typeof (r as any).issuedBefore === 'number' ? (r as any).issuedBefore : 0;
+function toUI(reg: Registrant | RegistrantLite): UIRegistrant {
+  const masterQuota = getNumber(reg, 'masterQuota') ?? 0;
+  const issuedBefore = getNumber(reg, 'issuedBefore') ?? 0;
   const computedRemaining = Math.max(0, masterQuota - issuedBefore);
-  const evId = getOptionalString(r as any, 'eventId');
+  const evId = getOptionalString(reg, 'eventId');
+
+  const idRaw =
+    (typeof (reg as Registrant).id === 'string' ? (reg as Registrant).id : undefined) ||
+    getString(reg, 'id') ||
+    '';
+
+  const emailRaw =
+    (typeof (reg as Registrant).email === 'string' ? (reg as Registrant).email : undefined) ||
+    getString(reg, 'email') ||
+    '';
+
+  const createdAtRaw =
+    (typeof (reg as RegistrantLite).createdAt === 'string' ? (reg as RegistrantLite).createdAt : undefined) ||
+    getOptionalString(reg, 'createdAt') ||
+    null;
+
+  const updatedAtRaw =
+    (typeof (reg as RegistrantLite).updatedAt === 'string' ? (reg as RegistrantLite).updatedAt : undefined) ||
+    getOptionalString(reg, 'updatedAt');
+
+  const waRaw =
+    (typeof (reg as RegistrantLite).wa === 'string' ? (reg as RegistrantLite).wa : undefined) ||
+    getString(reg, 'wa') ||
+    null;
+
+  const sourceRaw =
+    (typeof (reg as RegistrantLite).source === 'string' ? (reg as RegistrantLite).source : undefined) ||
+    getString(reg, 'source') ||
+    'MASTER';
+
+  const statusRaw =
+    (typeof (reg as RegistrantLite).status === 'string' ? (reg as RegistrantLite).status : undefined) ||
+    getString(reg, 'status') ||
+    'PENDING';
+
+  const isMasterMatchRaw =
+    (typeof getBoolean(reg, 'isMasterMatch') === 'boolean' ? getBoolean(reg, 'isMasterMatch') : undefined) ?? null;
+
+  const quotaRemainingRaw =
+    (typeof (reg as RegistrantLite).quotaRemaining === 'number' ? (reg as RegistrantLite).quotaRemaining : undefined) ??
+    getNumber(reg, 'quotaRemaining');
 
   return {
-    id: (r as any).id,
+    id: idRaw,
     eventId: evId,
-    email: (r as any).email ?? '',
-    name: buildName(r as Registrant),
-    wa: (r as any).wa ?? null,
-    source: (r as any).source ?? 'MASTER',
-    status: (r as any).status ?? 'PENDING',
-    isMasterMatch: (r as any).isMasterMatch ?? null,
-    masterQuota: (r as any).masterQuota ?? null,
-    issuedBefore: (r as any).issuedBefore ?? null,
-    quotaRemaining: (r as any).quotaRemaining ?? computedRemaining,
-    createdAt: safeIso((r as any).createdAt as string | null),
-    updatedAt: (r as any).updatedAt ?? undefined,
+    email: emailRaw,
+    name: buildName(reg),
+    wa: waRaw,
+    source: sourceRaw,
+    status: statusRaw,
+    isMasterMatch: isMasterMatchRaw,
+    masterQuota: masterQuota ?? null,
+    issuedBefore: issuedBefore ?? null,
+    quotaRemaining: typeof quotaRemainingRaw === 'number' ? quotaRemainingRaw : computedRemaining,
+    createdAt: safeIso(createdAtRaw),
+    updatedAt: updatedAtRaw,
   };
 }
 
@@ -215,7 +301,9 @@ export default function ApprovePage() {
   useEffect(() => {
     void fetchData();
     void refreshPool();
-    const t = setInterval(() => { void refreshPool(); }, 3000);
+    const t = setInterval(() => {
+      void refreshPool();
+    }, 3000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, source]);
@@ -223,7 +311,7 @@ export default function ApprovePage() {
   function incCount(id: string, max?: number) {
     setCounts((m) => {
       const cur = m[id] ?? 1;
-      const next = Math.max(0, Math.min((max ?? 9999), cur + 1));
+      const next = Math.max(0, Math.min(max ?? 9999, cur + 1));
       return { ...m, [id]: next };
     });
   }
@@ -251,9 +339,9 @@ export default function ApprovePage() {
         setToastMsg('Konfirmasi tercatat tapi tiket tidak terbaca.');
         setToastOpen(true);
       }
-    } catch (e:any) {
+    } catch (e: unknown) {
       setToastType('error');
-      setToastMsg(e?.message || 'Gagal konfirmasi.');
+      setToastMsg(toErrorMessage(e) || 'Gagal konfirmasi.');
       setToastOpen(true);
     }
   }
@@ -282,7 +370,11 @@ export default function ApprovePage() {
           <select
             className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
             value={status}
-            onChange={(e) => { setStatus(e.target.value as ReqStatus); setOffset(0); setItems([]); }}
+            onChange={(e) => {
+              setStatus(e.target.value as ReqStatus);
+              setOffset(0);
+              setItems([]);
+            }}
           >
             <option value="PENDING">PENDING</option>
             <option value="CONFIRMED">CONFIRMED</option>
@@ -293,7 +385,11 @@ export default function ApprovePage() {
           <select
             className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
             value={source}
-            onChange={(e) => { setSource(e.target.value as Source); setOffset(0); setItems([]); }}
+            onChange={(e) => {
+              setSource(e.target.value as Source);
+              setOffset(0);
+              setItems([]);
+            }}
           >
             <option value="MASTER">MASTER</option>
             <option value="ALL">ALL SOURCE</option>
@@ -301,7 +397,15 @@ export default function ApprovePage() {
             <option value="GIMMICK">GIMMICK</option>
           </select>
 
-          <form onSubmit={(e) => { e.preventDefault(); setOffset(0); setItems([]); void fetchData(); }} className="flex w-full gap-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setOffset(0);
+              setItems([]);
+              void fetchData();
+            }}
+            className="flex w-full gap-2"
+          >
             <input
               className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
               placeholder="Cari email/nama/wa…"
@@ -337,8 +441,14 @@ export default function ApprovePage() {
                 </div>
 
                 <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
-                  <div> Dibuat: <b className="text-slate-700">{new Date(it.createdAt).toLocaleString()}</b></div>
-                  <div>Status: <b className="text-slate-700">{it.status}</b></div>
+                  <div>
+                    {' '}
+                    Dibuat:{' '}
+                    <b className="text-slate-700">{new Date(it.createdAt).toLocaleString()}</b>
+                  </div>
+                  <div>
+                    Status: <b className="text-slate-700">{it.status}</b>
+                  </div>
                 </div>
 
                 <div className="mb-3 flex items-center justify-between">
@@ -346,22 +456,38 @@ export default function ApprovePage() {
                     Quota MASTER: <b>{it.source === 'MASTER' ? it.quotaRemaining : '—'}</b>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button type="button" className="h-8 w-8 rounded-lg border border-rose-200 text-sm" onClick={() => decCount(it.id)} disabled={!isPending}>–</button>
+                    <button
+                      type="button"
+                      className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
+                      onClick={() => decCount(it.id)}
+                      disabled={!isPending}
+                    >
+                      –
+                    </button>
                     <input
                       type="number"
                       min={1}
                       step={1}
                       value={def}
-                      onChange={(e) => setCounts((m) => ({ ...m, [it.id]: Math.max(1, Number(e.target.value || 1)) }))}
+                      onChange={(e) =>
+                        setCounts((m) => ({
+                          ...m,
+                          [it.id]: Math.max(1, Number(e.target.value || 1)),
+                        }))
+                      }
                       className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
                       disabled={!isPending}
                     />
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() => incCount(it.id, it.source === 'MASTER' ? it.quotaRemaining ?? undefined : 9999)}
+                      onClick={() =>
+                        incCount(it.id, it.source === 'MASTER' ? it.quotaRemaining ?? undefined : 9999)
+                      }
                       disabled={!isPending}
-                    >+</button>
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
 
@@ -384,7 +510,11 @@ export default function ApprovePage() {
 
         {stillHasMore && (
           <div className="mt-4 flex justify-center">
-            <button onClick={loadMore} className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm" disabled={loading}>
+            <button
+              onClick={loadMore}
+              className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm"
+              disabled={loading}
+            >
               {loading ? 'Memuat…' : 'Load more'}
             </button>
           </div>
@@ -398,16 +528,31 @@ export default function ApprovePage() {
             <h3 className="mb-3 text-base font-bold">Nomor Antrean</h3>
             <div className="grid grid-cols-3 gap-2">
               {issuedCodes.map((c) => (
-                <div key={c} className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-center font-semibold text-[#7a0f2b]">
+                <div
+                  key={c}
+                  className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-center font-semibold text-[#7a0f2b]"
+                >
                   {fmtCode(c)}
                 </div>
               ))}
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button className="rounded-xl border px-3 py-2 text-sm" onClick={() => { try { void navigator.clipboard?.writeText(issuedCodes.join(', ')); } catch {} }}>
+              <button
+                className="rounded-xl border px-3 py-2 text-sm"
+                onClick={() => {
+                  try {
+                    void navigator.clipboard?.writeText(issuedCodes.join(', '));
+                  } catch {
+                    // ignore
+                  }
+                }}
+              >
                 Salin
               </button>
-              <button className="rounded-xl bg-[#7a0f2b] px-3 py-2 text-sm font-semibold text-white" onClick={() => setIssuedCodes(null)}>
+              <button
+                className="rounded-xl bg-[#7a0f2b] px-3 py-2 text-sm font-semibold text-white"
+                onClick={() => setIssuedCodes(null)}
+              >
                 Done
               </button>
             </div>
