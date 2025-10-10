@@ -51,9 +51,12 @@ export function normalizeBoard(b?: BoardResponse | null): NormalizedBoard {
     next: nextArr,
     queue: board.queue ?? [],
     skipGrid: board.skipGrid ?? [],
-    nextCount: typeof board.nextCount === 'number'
-      ? board.nextCount
-      : Array.isArray(nextArr) ? nextArr.length : 0,
+    nextCount:
+      typeof board.nextCount === 'number'
+        ? board.nextCount
+        : Array.isArray(nextArr)
+        ? nextArr.length
+        : 0,
     totals: (board.totals ?? {}) as Record<string, unknown>,
     ...board,
   };
@@ -62,10 +65,18 @@ export function normalizeBoard(b?: BoardResponse | null): NormalizedBoard {
 // ---- Pool
 export async function fetchPool() {
   const EVENT = ENV_EVENT_ID;
-  const res = await fetch(`${BASE}/api/pool?eventId=${encodeURIComponent(EVENT)}`, { cache: 'no-store' });
+  const res = await fetch(
+    `${BASE}/api/pool?eventId=${encodeURIComponent(EVENT)}`,
+    { cache: 'no-store' }
+  );
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.reason || 'Gagal memuat pool');
-  return data as { ok: boolean; eventId: string; pool: number; method?: string };
+  return data as {
+    ok: boolean;
+    eventId: string;
+    pool: number;
+    method?: string;
+  };
 }
 
 // ---- Confirm (legacy payload)
@@ -99,29 +110,50 @@ export async function confirmRequest(requestId: string, useCount = 1) {
 // ---- Board snapshot sederhana
 export async function getBoard(eventId?: string): Promise<BoardResponse> {
   const eid = eventId ?? ENV_EVENT_ID;
-  const r = await fetch(`${BASE}/api/board?eventId=${encodeURIComponent(eid)}`, { cache: 'no-store' });
+  const r = await fetch(
+    `${BASE}/api/board?eventId=${encodeURIComponent(eid)}`,
+    { cache: 'no-store' }
+  );
   if (!r.ok) throw new Error(`getBoard failed: ${r.status}`);
   return r.json();
 }
 
 // ---- Ops ringan (tanpa batch)
 export async function promoteToActive() {
-  const r = await fetch(`${BASE}/api/promote?eventId=${encodeURIComponent(ENV_EVENT_ID)}`, { method: 'POST' });
+  const r = await fetch(
+    `${BASE}/api/promote?eventId=${encodeURIComponent(ENV_EVENT_ID)}`,
+    { method: 'POST' }
+  );
   if (!r.ok) throw new Error(`promote failed: ${r.status}`);
   return r.json();
 }
 export async function doneTicket(id: string) {
-  const r = await fetch(`${BASE}/api/done/${encodeURIComponent(id)}?eventId=${encodeURIComponent(ENV_EVENT_ID)}`, { method: 'POST' });
+  const r = await fetch(
+    `${BASE}/api/done/${encodeURIComponent(id)}?eventId=${encodeURIComponent(
+      ENV_EVENT_ID
+    )}`,
+    { method: 'POST' }
+  );
   if (!r.ok) throw new Error(`done failed: ${r.status}`);
   return r.json();
 }
 export async function skipTicket(id: string) {
-  const r = await fetch(`${BASE}/api/skip/${encodeURIComponent(id)}?eventId=${encodeURIComponent(ENV_EVENT_ID)}`, { method: 'POST' });
+  const r = await fetch(
+    `${BASE}/api/skip/${encodeURIComponent(id)}?eventId=${encodeURIComponent(
+      ENV_EVENT_ID
+    )}`,
+    { method: 'POST' }
+  );
   if (!r.ok) throw new Error(`skip failed: ${r.status}`);
   return r.json();
 }
 export async function recallTicket(id: string) {
-  const r = await fetch(`${BASE}/api/recall/${encodeURIComponent(id)}?eventId=${encodeURIComponent(ENV_EVENT_ID)}`, { method: 'POST' });
+  const r = await fetch(
+    `${BASE}/api/recall/${encodeURIComponent(id)}?eventId=${encodeURIComponent(
+      ENV_EVENT_ID
+    )}`,
+    { method: 'POST' }
+  );
   if (!r.ok) throw new Error(`recall failed: ${r.status}`);
   return r.json();
 }
@@ -136,9 +168,16 @@ export async function callNext() {
   return promoteToActive();
 }
 
+// 2b) Beberapa file lama pakai "callNext6" → tetap panggil promoteToActive
+export async function callNext6() {
+  return promoteToActive();
+}
+
 // 3) Komponen lama import "callByCode" → coba recall-by-code jika endpoint ada; jika tidak, fallback ke promote
 export async function callByCode(code: string) {
-  const url = `${BASE}/api/recall-by-code/${encodeURIComponent(code)}?eventId=${encodeURIComponent(ENV_EVENT_ID)}`;
+  const url = `${BASE}/api/recall-by-code/${encodeURIComponent(
+    code
+  )}?eventId=${encodeURIComponent(ENV_EVENT_ID)}`;
   try {
     const r = await fetch(url, { method: 'POST' });
     if (r.ok) return r.json();
