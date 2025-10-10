@@ -12,11 +12,24 @@ import {
 } from '@/lib/queueApi';
 
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || 'seed-event';
+const ACTIVE_SLOTS = Number(process.env.NEXT_PUBLIC_ACTIVE_SLOT_SIZE) || 6;
+
+// --- tiny safe-access helpers (tanpa any) ---
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+function getNumber(obj: unknown, key: string): number | undefined {
+  if (isRecord(obj)) {
+    const v = obj[key];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+  }
+  return undefined;
+}
 
 // helper aman untuk ambil angka dari totals
 function num(obj: unknown, key: string): number {
-  if (obj && typeof obj === 'object' && key in (obj as Record<string, unknown>)) {
-    const v = (obj as Record<string, unknown>)[key];
+  if (isRecord(obj) && key in obj) {
+    const v = obj[key];
     return typeof v === 'number' ? v : 0;
   }
   return 0;
@@ -28,9 +41,8 @@ function toDisplayBatches(q: unknown): { batchNo?: number | null; items: Ticket[
   const first = q[0] as unknown;
 
   // case: sudah batchy (punya items)
-  if (first && typeof first === 'object' && 'items' in (first as Record<string, unknown>)) {
-    // pastikan items selalu array
-    return (q as Array<{ batchNo?: number | null; items?: Ticket[] }>).map(b => ({
+  if (isRecord(first) && 'items' in first) {
+    return (q as Array<{ batchNo?: number | null; items?: Ticket[] }>).map((b) => ({
       batchNo: b.batchNo ?? null,
       items: Array.isArray(b.items) ? b.items : [],
     }));
@@ -39,7 +51,7 @@ function toDisplayBatches(q: unknown): { batchNo?: number | null; items: Ticket[
   // case: flat Ticket[]
   const byBatch = new Map<number | null | undefined, Ticket[]>();
   (q as Ticket[]).forEach((t) => {
-    const key = t.batchNo ?? null; // null & undefined disatukan
+    const key = getNumber(t as unknown, 'batchNo') ?? null; // null & undefined disatukan
     const arr = byBatch.get(key) ?? [];
     arr.push(t);
     byBatch.set(key, arr);
@@ -49,6 +61,34 @@ function toDisplayBatches(q: unknown): { batchNo?: number | null; items: Ticket[
     batchNo,
     items,
   }));
+}
+
+// bentuk array slot untuk ACTIVE section:
+// - kalau ticket punya slotNo valid (1..N), letakkan di slot itu
+// - sisanya diisi berurutan
+function placeActiveIntoSlots(active: Ticket[], N: number): (Ticket | null)[] {
+  const slots: (Ticket | null)[] = Array.from({ length: N }, () => null);
+
+  // taruh yang punya slotNo valid dulu
+  for (const t of active) {
+    const slot = getNumber(t as unknown, 'slotNo');
+    if (typeof slot === 'number' && slot >= 1 && slot <= N && slots[slot - 1] === null) {
+      slots[slot - 1] = t;
+    }
+  }
+  // isi sisa secara berurutan
+  let idx = 0;
+  for (const t of active) {
+    if (slots.every((s) => s !== null)) break;
+    // kalau t sudah ditempatkan via slotNo, skip
+    if (slots.includes(t)) continue;
+    while (idx < N && slots[idx] !== null) idx++;
+    if (idx < N) {
+      slots[idx] = t;
+      idx++;
+    }
+  }
+  return slots;
 }
 
 export default function QueuePage() {
@@ -61,6 +101,7 @@ export default function QueuePage() {
   const { active, queue, skipGrid, nextCount, totals } = safe;
 
   const displayBatches = toDisplayBatches(queue).slice(0, 5);
+  const activeSlots = placeActiveIntoSlots(active ?? [], ACTIVE_SLOTS);
 
   return (
     <div className="p-4 space-y-6">
@@ -68,52 +109,79 @@ export default function QueuePage() {
       <div className="flex items-center gap-2">
         <button
           className="px-3 py-2 rounded bg-black text-white"
-          onClick={async () => { await callNext6(); await refresh(); }}
+          onClick={async () => {
+            await callNext6();
+            await refresh();
+          }}
         >
           Call Next 6
         </button>
         <button
           className="px-3 py-2 rounded border"
-          onClick={async () => { await promoteToActive(); await refresh(); }}
+          onClick={async () => {
+            await promoteToActive();
+            await refresh();
+          }}
         >
           Promote
         </button>
         <div className="ml-auto text-sm opacity-70">
-          Active: {num(totals, 'active')} · Batches: {num(totals, 'queueBatches')} · Next: {nextCount} · Skip: {num(totals, 'skip')}
+          Active: {num(totals, 'active')} · Batches: {num(totals, 'queueBatches')} · Next: {nextCount}{' '}
+          · Skip: {num(totals, 'skip')}
         </div>
       </div>
 
-      {/* Active (6 slot) */}
+      {/* Active (N slot) */}
       <section>
         <h2 className="font-semibold mb-2">Active</h2>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-          {Array.from({ length: 6 }, (_, i) => i + 1).map((slot) => {
-            const t = active.find((x) => x.slotNo === slot);
-            return (
-              <div key={slot} className="border rounded p-3">
-                <div className="text-xs opacity-60 mb-1">Slot {slot}</div>
-                {t ? (
-                  <>
-                    <div className="font-medium">{t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}</div>
-                    <div className="text-xs mt-1">IN PROCESS</div>
-                    <div className="flex gap-2 mt-3">
-                      <button
-                        className="text-xs px-2 py-1 rounded border"
-                        onClick={async () => { await skipTicket(t.id); await refresh(); }}
-                      >
-                        Skip
-                      </button>
-                      <button
-                        className="text-xs px-2 py-1 rounded bg-black text-white"
-                        onClick={async () => { await doneTicket(t.id); await refresh(); }}
-                      >
-                        Done
-                      </button>
-                    </div>
-                  </>
-                ) : (
+          {activeSlots.map((t, i) => {
+            const slot = i + 1;
+            if (!t) {
+              return (
+                <div key={`slot-empty-${slot}`} className="border rounded p-3">
+                  <div className="text-xs opacity-60 mb-1">Slot {slot}</div>
                   <div className="opacity-50 text-sm">Empty</div>
-                )}
+                </div>
+              );
+            }
+
+            const codeOrId = (t.code ?? t.id) ?? '';
+            const hasCode = codeOrId.length > 0;
+
+            return (
+              <div key={`slot-${slot}-${codeOrId || 'empty'}`} className="border rounded p-3">
+                <div className="text-xs opacity-60 mb-1">Slot {slot}</div>
+                <div className="font-medium">
+                  {t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}
+                </div>
+                <div className="text-xs mt-1">IN PROCESS</div>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    className="text-xs px-2 py-1 rounded border"
+                    disabled={!hasCode}
+                    title={!hasCode ? 'Kode tiket tidak tersedia' : undefined}
+                    onClick={async () => {
+                      if (!hasCode) return;
+                      await skipTicket(codeOrId);
+                      await refresh();
+                    }}
+                  >
+                    Skip
+                  </button>
+                  <button
+                    className="text-xs px-2 py-1 rounded bg-black text-white"
+                    disabled={!hasCode}
+                    title={!hasCode ? 'Kode tiket tidak tersedia' : undefined}
+                    onClick={async () => {
+                      if (!hasCode) return;
+                      await doneTicket(codeOrId);
+                      await refresh();
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -128,12 +196,16 @@ export default function QueuePage() {
             <div key={b.batchNo ?? `batch-${index}`} className="border rounded p-3">
               <div className="font-semibold mb-2">Batch {b.batchNo ?? index + 1}</div>
               <ol className="space-y-1 text-sm">
-                {b.items.map((t) => (
-                  <li key={t.id} className="flex justify-between">
-                    <span>{t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}</span>
-                    <span className="opacity-60">#{t.posInBatch}</span>
-                  </li>
-                ))}
+                {b.items.map((t, i) => {
+                  const key = (t.code ?? t.id) ?? `item-${i}`;
+                  const pos = getNumber(t as unknown, 'posInBatch') ?? i + 1;
+                  return (
+                    <li key={key} className="flex justify-between">
+                      <span>{t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}</span>
+                      <span className="opacity-60">#{pos}</span>
+                    </li>
+                  );
+                })}
               </ol>
             </div>
           ))}
@@ -144,18 +216,34 @@ export default function QueuePage() {
       <section>
         <h2 className="font-semibold mb-2">Skipped</h2>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-          {skipGrid.map((t) => (
-            <div key={t.id} className="border rounded p-2">
-              <div className="text-sm">{t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}</div>
-              <button
-                className="text-xs mt-2 px-2 py-1 rounded border"
-                onClick={async () => { await recallTicket(t.id); await refresh(); }}
-              >
-                Recall
-              </button>
-            </div>
-          ))}
-          {skipGrid.length === 0 && <div className="opacity-60 text-sm">Tidak ada yang di-skip.</div>}
+          {(skipGrid ?? []).map((t, idx) => {
+            const codeOrId = (t.code ?? t.id) ?? '';
+            const hasCode = codeOrId.length > 0;
+            const key = codeOrId || `skip-${idx}`;
+
+            return (
+              <div key={key} className="border rounded p-2">
+                <div className="text-sm">
+                  {t.code ?? t.name ?? (t.id ? t.id.slice(0, 6) : '-')}
+                </div>
+                <button
+                  className="text-xs mt-2 px-2 py-1 rounded border"
+                  disabled={!hasCode}
+                  title={!hasCode ? 'Kode tiket tidak tersedia' : undefined}
+                  onClick={async () => {
+                    if (!hasCode) return;
+                    await recallTicket(codeOrId);
+                    await refresh();
+                  }}
+                >
+                  Recall
+                </button>
+              </div>
+            );
+          })}
+          {(skipGrid ?? []).length === 0 && (
+            <div className="opacity-60 text-sm">Tidak ada yang di-skip.</div>
+          )}
         </div>
       </section>
     </div>

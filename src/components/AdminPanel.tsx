@@ -11,6 +11,10 @@ export default function AdminPanel() {
   const { data, loading, error, refresh } = useBoard("seed-event", 1600);
   const [tab, setTab] = useState<"active" | "next">("active");
 
+  // amanin array (hindari undefined)
+  const active: Ticket[] = (data?.active ?? []) as Ticket[];
+  const next: Ticket[] = (data?.next ?? []) as Ticket[];
+
   return (
     <div className="container-page">
       <div className="flex items-center justify-between mb-2">
@@ -43,36 +47,74 @@ export default function AdminPanel() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {loading
               ? Array.from({ length: 3 }).map((_, i: number) => (
-                  <div key={`sk-act-${i}`} className="rounded-2xl p-3 bg-white/5 border border-white/10">
+                  <div
+                    key={`sk-act-${i}`}
+                    className="rounded-2xl p-3 bg-white/5 border border-white/10"
+                  >
                     <div className="h-16 animate-pulse bg-white/5 rounded-xl" />
                   </div>
                 ))
-              : data.active.map((t: Ticket) => {
-  const code = t.code ?? t.id; // ← aman: selalu string
-  return (
-    <div key={t.id ?? t.code} className="rounded-2xl p-3 bg-white/5 border border-white/10">
-      <div className="flex items-center justify-between">
-        <div className="text-2xl font-black tabular-nums">{code}</div>
-        <div className="flex gap-2">
-          <button
-            className="btn-secondary"
-            onClick={async () => { await setInProcess(code); await refresh(); }}
-          >In-Process</button>
-          <button
-            className="btn-secondary"
-            onClick={async () => { await setDone(code); await refresh(); }}
-          >Done</button>
-          <button
-            className="btn-secondary"
-            onClick={async () => { await setSkip(code); await refresh(); }}
-          >Skip</button>
-        </div>
-      </div>
-      {t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
-    </div>
-  );
-})}
+              : active.map((t: Ticket, idx: number) => {
+                  const code = (t.code ?? t.id) ?? "";
+                  const hasCode = code.length > 0;
+                  const key = (t.id ?? t.code) ?? `act-${idx}`;
 
+                  return (
+                    <div
+                      key={key}
+                      className="rounded-2xl p-3 bg-white/5 border border-white/10"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="text-2xl font-black tabular-nums">
+                          {hasCode ? code : "—"}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            className="btn-secondary"
+                            disabled={!hasCode}
+                            title={!hasCode ? "Kode tiket tidak tersedia" : undefined}
+                            onClick={async () => {
+                              if (!hasCode) return;
+                              await setInProcess(code);
+                              await refresh();
+                            }}
+                          >
+                            In-Process
+                          </button>
+                          <button
+                            className="btn-secondary"
+                            disabled={!hasCode}
+                            title={!hasCode ? "Kode tiket tidak tersedia" : undefined}
+                            onClick={async () => {
+                              if (!hasCode) return;
+                              await setDone(code);
+                              await refresh();
+                            }}
+                          >
+                            Done
+                          </button>
+                          <button
+                            className="btn-secondary"
+                            disabled={!hasCode}
+                            title={!hasCode ? "Kode tiket tidak tersedia" : undefined}
+                            onClick={async () => {
+                              if (!hasCode) return;
+                              await setSkip(code);
+                              await refresh();
+                            }}
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      </div>
+                      {t.name && (
+                        <div className="text-sm opacity-80 mt-1 line-clamp-1">
+                          {t.name}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
           </div>
         </section>
       ) : (
@@ -80,16 +122,30 @@ export default function AdminPanel() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {loading
               ? Array.from({ length: 6 }).map((_, i: number) => (
-                  <div key={`sk-next-${i}`} className="rounded-xl p-3 bg-white/5 border border-white/10">
+                  <div
+                    key={`sk-next-${i}`}
+                    className="rounded-xl p-3 bg-white/5 border border-white/10"
+                  >
                     <div className="h-14 animate-pulse bg-white/5 rounded-lg" />
                   </div>
                 ))
-              : data.next.map((t: Ticket) => (
-                  <div key={t.code} className="rounded-xl p-3 bg-white/5 border border-white/10">
-                    <div className="text-2xl font-black tabular-nums">{t.code}</div>
-                    {t.name && <div className="text-sm opacity-80 mt-1 line-clamp-1">{t.name}</div>}
-                  </div>
-                ))}
+              : next.map((t: Ticket, idx: number) => {
+                  const key = (t.code ?? t.id) ?? `next-${idx}`;
+                  const label = t.code ?? (t.id ? t.id.slice(0, 6) : "—");
+                  return (
+                    <div
+                      key={key}
+                      className="rounded-xl p-3 bg-white/5 border border-white/10"
+                    >
+                      <div className="text-2xl font-black tabular-nums">{label}</div>
+                      {t.name && (
+                        <div className="text-sm opacity-80 mt-1 line-clamp-1">
+                          {t.name}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
           </div>
         </section>
       )}

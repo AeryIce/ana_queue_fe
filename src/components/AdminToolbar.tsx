@@ -19,15 +19,15 @@ export function AdminToolbar({ onSuccess, eventId = "seed-event" }: Props) {
   const doCallNext = async () => {
     setBusy(true);
     try {
-      // 1) Coba endpoint resmi BE
-      await callNext(N, eventId);
+      // 1) Endpoint utama (alias ke promoteToActive) — TIDAK terima argumen
+      await callNext();
       onSuccess?.();
       push(`Dipanggil ${N} nomor ke slot aktif`, "Sukses");
       return;
     } catch {
       // 2) Fallback: ambil NEXT dari /api/board, lalu panggil N tiket satu per satu
       try {
-        const board = await fetchBoard(eventId);
+        const board = await fetchBoard(eventId); // getBoard(eventId?) → ok argumen opsional
         const pick: Ticket[] = (board.next ?? []).slice(0, N);
 
         if (pick.length === 0) {
@@ -36,7 +36,9 @@ export function AdminToolbar({ onSuccess, eventId = "seed-event" }: Props) {
         }
 
         for (const t of pick) {
-          await callByCode(t.code);
+          const codeOrId = (t.code ?? t.id) ?? "";
+          if (!codeOrId) continue; // skip kalau kosong
+          await callByCode(codeOrId);
         }
 
         onSuccess?.();
