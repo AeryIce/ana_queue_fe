@@ -291,73 +291,58 @@ export default function ApprovePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, source]);
 
-  // ++/-- sekarang 0..max (boleh 0 untuk donate-all)
-  function incCount(id: string, max?: number) {
-    setCounts((m) => {
-      const cur = m[id] ?? 1; // default tampilan tetap 1 (UI tidak berubah)
-      const next = clamp0toMax(cur + 1, max ?? 9999);
-      return { ...m, [id]: next };
-    });
-  }
-  function decCount(id: string) {
-    setCounts((m) => {
-      const cur = m[id] ?? 1;
-      const next = clamp0toMax(cur - 1, 9999); // max tak relevan untuk turunin
-      return { ...m, [id]: next };
-    });
-  }
-
   async function confirmOne(id: string) {
-  const count = Math.max(0, counts[id] ?? 0); // ← izinkan 0 (donate-all)
-  try {
-    const res = await confirmRequest(id, count);
+    const count = Math.max(0, counts[id] ?? 0); // izinkan 0 (donate-all)
+    try {
+      const res = await confirmRequest(id, count);
 
-    // 1) Walk-in: pool kosong / tidak cukup
-    if (!res?.ok) {
+      // 1) Walk-in: pool kosong / tidak cukup
+      if (!res?.ok) {
+        setToastType('error');
+        // @ts-expect-error: BE mengirim error di ConfirmResponse (sudah ditambahkan di queueApi)
+        setToastMsg(res?.error || 'Gagal konfirmasi.');
+        setToastOpen(true);
+        return;
+      }
+
+      // 2) Donate-all (MASTER, useCount=0)
+      if ((res as any)?.donatedAll || ((res as any)?.count === 0 && (res as any)?.leftover > 0)) {
+        setIssuedCodes(null);
+        setToastType('success');
+        setToastMsg('User melakukan semua donasi kuota.');
+        setToastOpen(true);
+        await fetchData();
+        await refreshPool();
+        return;
+      }
+
+      // 3) Terbit tiket: dukung multiple codes
+      const anyRes = res as any;
+      const codes: string[] =
+        Array.isArray(anyRes?.codes) && anyRes.codes.length > 0
+          ? anyRes.codes
+          : anyRes?.ticket?.code
+          ? [anyRes.ticket.code]
+          : [];
+
+      if (codes.length > 0) {
+        setIssuedCodes(codes);
+        setToastType('success');
+        setToastMsg(`Approved: ${codes.join(', ')}`);
+        setToastOpen(true);
+        await fetchData();
+        await refreshPool();
+      } else {
+        setToastType('error');
+        setToastMsg('Konfirmasi tercatat tapi tiket tidak terbaca.');
+        setToastOpen(true);
+      }
+    } catch (e: unknown) {
       setToastType('error');
-      setToastMsg(res?.error || 'Gagal konfirmasi.');
-      setToastOpen(true);
-      return;
-    }
-
-    // 2) Donate-all (MASTER, useCount=0)
-    if (res?.donatedAll || (res?.count === 0 && res?.leftover > 0)) {
-      setIssuedCodes(null);
-      setToastType('success');
-      setToastMsg('User melakukan semua donasi kuota.');
-      setToastOpen(true);
-      await fetchData();
-      await refreshPool();
-      return;
-    }
-
-    // 3) Terbit tiket: dukung multiple codes
-    const codes: string[] =
-      Array.isArray(res?.codes) && res.codes.length > 0
-        ? res.codes
-        : res?.ticket?.code
-        ? [res.ticket.code]
-        : [];
-
-    if (codes.length > 0) {
-      setIssuedCodes(codes);
-      setToastType('success');
-      setToastMsg(`Approved: ${codes.join(', ')}`);
-      setToastOpen(true);
-      await fetchData();
-      await refreshPool();
-    } else {
-      // fallback lama (harusnya tidak kena dengan BE baru)
-      setToastType('error');
-      setToastMsg('Konfirmasi tercatat tapi tiket tidak terbaca.');
+      setToastMsg(toErrorMessage(e) || 'Gagal konfirmasi.');
       setToastOpen(true);
     }
-  } catch (e: unknown) {
-    setToastType('error');
-    setToastMsg(toErrorMessage(e) || 'Gagal konfirmasi.');
-    setToastOpen(true);
   }
-}
 
   async function loadMore() {
     const nextOffset = offset + limit;
@@ -462,8 +447,7 @@ export default function ApprovePage() {
 
                 <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
                   <div>
-                    Dibuat:{' '}
-                    <b className="text-slate-700">{new Date(it.createdAt).toLocaleString()}</b>
+                    Dibuat: <b className="text-slate-700">{new Date(it.createdAt).toLocaleString()}</b>
                   </div>
                   <div>
                     Status: <b className="text-slate-700">{it.status}</b>
@@ -478,9 +462,7 @@ export default function ApprovePage() {
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() =>
-                        setCounts((m) => ({ ...m, [it.id]: clamp0toMax(def - 1, max) }))
-                      }
+                      onClick={() => setCounts((m) => ({ ...m, [it.id]: clamp0toMax(def - 1, max) }))}
                       disabled={!canAct}
                     >
                       –
@@ -491,10 +473,7 @@ export default function ApprovePage() {
                       step={1}
                       value={def}
                       onChange={(e) =>
-                        setCounts((m) => ({
-                          ...m,
-                          [it.id]: clamp0toMax(Number(e.target.value || 0), max),
-                        }))
+                        setCounts((m) => ({ ...m, [it.id]: clamp0toMax(Number(e.target.value || 0), max) }))
                       }
                       className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
                       disabled={!canAct}
@@ -502,9 +481,7 @@ export default function ApprovePage() {
                     <button
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
-                      onClick={() =>
-                        setCounts((m) => ({ ...m, [it.id]: clamp0toMax(def + 1, max) }))
-                      }
+                      onClick={() => setCounts((m) => ({ ...m, [it.id]: clamp0toMax(def + 1, max) }))}
                       disabled={!canAct}
                     >
                       +
