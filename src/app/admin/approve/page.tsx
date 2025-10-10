@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { getPendingRequests } from '@/lib/approveApi';
 import type { GetPendingParams, Registrant, RegistrantList } from '@/lib/approveApi';
 import { confirmRequest, fetchPool } from '@/lib/queueApi';
-import type { ConfirmResponse } from '@/lib/queueApi';
+
 
 const API_BASE = process.env.NEXT_PUBLIC_QUEUE_API || '';
 const EVENT_ID = process.env.NEXT_PUBLIC_EVENT_ID || '';
@@ -295,7 +295,7 @@ export default function ApprovePage() {
   async function confirmOne(id: string) {
     const count = Math.max(0, counts[id] ?? 0); // izinkan 0 (donate-all)
     try {
-      const res: ConfirmResponse = await confirmRequest(id, count);
+      const res = await confirmRequest(id, count);
 
       // 1) Walk-in: pool kosong / tidak cukup
       if (!res.ok) {
