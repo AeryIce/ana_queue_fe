@@ -204,6 +204,12 @@ function toUI(reg: Registrant | RegistrantLite): UIRegistrant {
   };
 }
 
+// clamp helper (0..max)
+function clamp0toMax(n: number, max: number) {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(max, Math.floor(n)));
+}
+
 export default function ApprovePage() {
   const [items, setItems] = useState<UIRegistrant[]>([]);
   const [total, setTotal] = useState(0);
@@ -278,30 +284,37 @@ export default function ApprovePage() {
   useEffect(() => {
     void fetchData();
     void refreshPool();
-    const t = setInterval(() => { void refreshPool(); }, 3000);
+    const t = setInterval(() => {
+      void refreshPool();
+    }, 3000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, source]);
 
+  // ++/-- sekarang 0..max (boleh 0 untuk donate-all)
   function incCount(id: string, max?: number) {
     setCounts((m) => {
-      const cur = m[id] ?? 1;
-      const next = Math.max(1, Math.min(max ?? 9999, cur + 1));
+      const cur = m[id] ?? 1; // default tampilan tetap 1 (UI tidak berubah)
+      const next = clamp0toMax(cur + 1, max ?? 9999);
       return { ...m, [id]: next };
     });
   }
   function decCount(id: string) {
     setCounts((m) => {
       const cur = m[id] ?? 1;
-      const next = Math.max(1, cur - 1);
+      const next = clamp0toMax(cur - 1, 9999); // max tak relevan untuk turunin
       return { ...m, [id]: next };
     });
   }
 
   async function confirmOne(id: string) {
-    const count = Math.max(1, counts[id] ?? 1);
+    // clamp ke 0..max saat kirim
+    const item = items.find((x) => x.id === id);
+    const max = item?.source === 'MASTER' ? (item?.quotaRemaining ?? 0) : 9999;
+    const count = clamp0toMax(counts[id] ?? 1, max);
+
     try {
-      const res = await confirmRequest(id, count); // <- useCount = donasi/tiket yang digunakan
+      const res = await confirmRequest(id, count, eventId); // useCount bisa 0..max
       if (res?.ok && res.ticket?.code) {
         setIssuedCodes([res.ticket.code]);
         setToastType('success');
@@ -403,9 +416,11 @@ export default function ApprovePage() {
 
           {items.map((it) => {
             const max = it.source === 'MASTER' ? (it.quotaRemaining ?? 0) : 9999;
-            const def = Math.max(1, Math.min(counts[it.id] ?? 1, max));
+            // default UI tetap 1, tapi bisa jadi 0; clamp 0..max
+            const def = clamp0toMax(counts[it.id] ?? 1, max);
             const isPending = it.status === 'PENDING';
-            const canAct = isPending && max > 0;
+            // tombol tetap aktif selama PENDING (walau max=0 → donate-all 0 tetap valid)
+            const canAct = isPending;
 
             return (
               <div key={it.id} className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm">
@@ -439,7 +454,7 @@ export default function ApprovePage() {
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
                       onClick={() =>
-                        setCounts((m) => ({ ...m, [it.id]: Math.max(1, def - 1) }))
+                        setCounts((m) => ({ ...m, [it.id]: clamp0toMax(def - 1, max) }))
                       }
                       disabled={!canAct}
                     >
@@ -447,13 +462,13 @@ export default function ApprovePage() {
                     </button>
                     <input
                       type="number"
-                      min={1}
+                      min={0}
                       step={1}
                       value={def}
                       onChange={(e) =>
                         setCounts((m) => ({
                           ...m,
-                          [it.id]: Math.max(1, Math.min(Number(e.target.value || 1), max)),
+                          [it.id]: clamp0toMax(Number(e.target.value || 0), max),
                         }))
                       }
                       className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
@@ -463,7 +478,7 @@ export default function ApprovePage() {
                       type="button"
                       className="h-8 w-8 rounded-lg border border-rose-200 text-sm"
                       onClick={() =>
-                        setCounts((m) => ({ ...m, [it.id]: Math.max(1, Math.min(def + 1, max)) }))
+                        setCounts((m) => ({ ...m, [it.id]: clamp0toMax(def + 1, max) }))
                       }
                       disabled={!canAct}
                     >
@@ -478,7 +493,7 @@ export default function ApprovePage() {
                       className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:bg-slate-200 disabled:text-slate-500"
                       disabled={!canAct}
                       onClick={() => void confirmOne(it.id)}
-                      title="Gunakan useCount sesuai input untuk mengeluarkan tiket / donasi"
+                      title="useCount: 0 = donate semua; >0 = gunakan sejumlah tiket (maksimal sisa kuota)"
                     >
                       Confirm
                     </button>
