@@ -152,6 +152,23 @@ function safeIso(d?: string | null): string {
     return new Date().toISOString();
   }
 }
+function getNumField(obj: unknown, key: string): number | null {
+  if (typeof obj === 'object' && obj !== null) {
+    const rec = obj as Record<string, unknown>;
+    const v = rec[key];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+  }
+  return null;
+}
+
+function pickFirstNumber(obj: unknown, keys: string[]): number | null {
+  for (const k of keys) {
+    const v = getNumField(obj, k);
+    if (v !== null) return v;
+  }
+  return null;
+}
+
 
 function toUI(reg: Registrant | RegistrantLite): UIRegistrant {
   const masterQuota = getNumber(reg, 'masterQuota') ?? 0;
@@ -243,22 +260,21 @@ export default function ApprovePage() {
   }, []);
 
   async function refreshPool() {
-    try {
-      const r = await fetchPool();
-      setPoolRemaining(typeof r.pool === 'number' ? r.pool : null);
-      const dn =
-        typeof (r as any).donation === 'number'
-          ? (r as any).donation
-          : typeof (r as any).donated === 'number'
-          ? (r as any).donated
-          : typeof (r as any).donations === 'number'
-          ? (r as any).donations
-          : null;
-      setDonationCount(dn);
-    } catch {
-      // diam
-    }
+  try {
+    const r = await fetchPool();
+    // pool
+    const poolVal =
+      typeof r.pool === 'number' ? r.pool : pickFirstNumber(r, ['pool']);
+    setPoolRemaining(typeof poolVal === 'number' ? poolVal : null);
+
+    // donation (donation | donated | donations)
+    const dn = pickFirstNumber(r, ['donation', 'donated', 'donations']);
+    setDonationCount(dn);
+  } catch {
+    // diam
   }
+}
+
 
   function normalizeResponse(list: RegistrantList, limitIn: number, offsetIn: number): RegistrantsResponseNormalized {
     const rows = (list.data ?? []).map((reg) => toUI(reg as RegistrantLite));
