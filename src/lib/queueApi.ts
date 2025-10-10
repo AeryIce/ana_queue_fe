@@ -93,7 +93,6 @@ async function safeJson<T>(res: Response): Promise<T> {
 }
 
 // ---- Pool
-// ---- Pool
 export async function fetchPool(eventId?: string) {
   const EVENT = eventId ?? ENV_EVENT_ID;
   const res = await fetch(`${BASE}/api/pool?eventId=${encodeURIComponent(EVENT)}`, {
@@ -104,6 +103,24 @@ export async function fetchPool(eventId?: string) {
   return data as { ok: boolean; eventId: string; pool: number; method?: string };
 }
 
+// ---- Confirm (legacy payload)
+// ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
+// ---- Confirm (ADMIN approve + donate/allocate)
+// ---- Confirm (legacy payload)
+// ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
+// ---- Confirm (ADMIN approve + donate/allocate)
+// ---- Confirm (legacy payload)
+// ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
+// ---- Confirm (ADMIN approve + donate/allocate)
+// ---- Confirm (legacy payload)
+// ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
+// ---- Confirm (ADMIN approve + donate/allocate)
+// ---- Confirm (legacy payload)
+// ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
+// ---- Confirm (ADMIN approve + donate/allocate)
+// ---- Confirm (legacy payload)
+// ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
+// ---- Confirm (ADMIN approve + donate/allocate)
 // ---- Confirm (legacy payload)
 // ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
 // ---- Confirm (ADMIN approve + donate/allocate)

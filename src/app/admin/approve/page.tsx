@@ -226,20 +226,20 @@ function clamp0toMax(n: number, max: number) {
 
 export default function ApprovePage() {
   const [items, setItems] = useState<UIRegistrant[]>([]);
-  const [total, setTotal] = useState(0);
-  const [limit, setLimit] = useState(10);
-  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState<number>(0);
+  const [limit, setLimit] = useState<number>(10);
+  const [offset, setOffset] = useState<number>(0);
 
   const [status, setStatus] = useState<ReqStatus>('PENDING');
   const [source, setSource] = useState<Source>('MASTER');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState<string>('');
 
   const [poolRemaining, setPoolRemaining] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
 
   const [counts, setCounts] = useState<Record<string, number>>({});
 
-  const [toastOpen, setToastOpen] = useState(false);
+  const [toastOpen, setToastOpen] = useState<boolean>(false);
   const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info');
   const [toastMsg, setToastMsg] = useState<string>('');
 
@@ -251,16 +251,15 @@ export default function ApprovePage() {
     return u.searchParams.get('event') || EVENT_ID;
   }, []);
 
- async function refreshPool() {
-  try {
-    const r = await fetchPool(eventId); // ← kirim eventId yang aktif
-    const poolVal = typeof r.pool === 'number' ? r.pool : null;
-    setPoolRemaining(poolVal);
-  } catch {
-    // ignore
+  async function refreshPool() {
+    try {
+      const r = await fetchPool(eventId); // ← kirim eventId yang aktif
+      const poolVal = typeof r.pool === 'number' ? r.pool : null;
+      setPoolRemaining(poolVal);
+    } catch {
+      // ignore
+    }
   }
-}
-
 
   function normalizeResponse(list: RegistrantList, limitIn: number, offsetIn: number): RegistrantsResponseNormalized {
     const rows = (list.data ?? []).map((reg: Registrant | RegistrantLite) => toUI(reg as RegistrantLite));
@@ -306,20 +305,18 @@ export default function ApprovePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, source]);
 
-  async function confirmOne(id: string) {
-    const count = Math.max(0, counts[id] ?? 0); // izinkan 0 (donate-all)
+  async function confirmOne(id: string, presetCount?: number) {
+    // gunakan count yang sudah di-clamp dari kartu; fallback ke state jika ada
+    const count = Math.max(0, typeof presetCount === 'number' ? presetCount : (counts[id] ?? 0));
     try {
-      const res = await confirmRequest(id, count, eventId) as ConfirmResult;
-
-      // 1) Walk-in: pool kosong / tidak cukup
+      const res: ConfirmResult = await confirmRequest(id, count, eventId);
       if (!res.ok) {
         setToastType('error');
-        setToastMsg(typeof res.error === 'string' ? res.error : 'Gagal konfirmasi.');
+        setToastMsg(res.error || 'Gagal konfirmasi.');
         setToastOpen(true);
         return;
       }
 
-      // 2) Donate-all (MASTER, useCount=0)
       const leftover = typeof res.leftover === 'number' ? res.leftover : 0;
       if (res.donatedAll || (res.count === 0 && leftover > 0)) {
         setIssuedCodes(null);
@@ -331,7 +328,6 @@ export default function ApprovePage() {
         return;
       }
 
-      // 3) Terbit tiket: dukung multiple codes
       const codes: string[] =
         Array.isArray(res.codes) && res.codes.length > 0
           ? res.codes
@@ -438,15 +434,16 @@ export default function ApprovePage() {
             </div>
           )}
 
-         {items.map((it: UIRegistrant) => {
-  const isWalkin = it.source === 'WALKIN' || it.source === 'GIMMICK';
-  const max = isWalkin
-    ? (poolRemaining ?? 0)        // Walk-in/Gimmick dibatasi stok pool
-    : (it.quotaRemaining ?? 0);   // Master dibatasi sisa kuota
+          {items.map((it: UIRegistrant) => {
+            const isWalkin = it.source === 'WALKIN' || it.source === 'GIMMICK';
+            const max = isWalkin ? (poolRemaining ?? 0) : (it.quotaRemaining ?? 0);
 
-  const def = clamp0toMax(counts[it.id] ?? 1, max);
-  const isPending = it.status === 'PENDING';
-  const canAct = isPending && (!isWalkin || (poolRemaining ?? 0) > 0);
+            // Walk-in default = 1 jika stok ada; selain itu (master) pakai state (0..max, default 1)
+            const def = isWalkin ? Math.min(1, max) : clamp0toMax(counts[it.id] ?? 1, max);
+
+            const isPending = it.status === 'PENDING';
+            const canAct = isPending && (!isWalkin || (poolRemaining ?? 0) > 0);
+            const editDisabled = !canAct || isWalkin; // kunci Walk-in di 1
 
             return (
               <div key={it.id} className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm">
@@ -484,23 +481,24 @@ export default function ApprovePage() {
                           [it.id]: clamp0toMax((m[it.id] ?? def) - 1, max),
                         }))
                       }
-                      disabled={!canAct}
+                      disabled={editDisabled}
                     >
                       –
                     </button>
                     <input
                       type="number"
-                      min={0}
+                      min={isWalkin ? 1 : 0}
                       step={1}
                       value={def}
                       onChange={(e) =>
                         setCounts((m: Record<string, number>) => ({
                           ...m,
-                          [it.id]: clamp0toMax(Number(e.target.value || 0), max),
+                          [it.id]: clamp0toMax(Number(e.target.value || (isWalkin ? 1 : 0)), max),
                         }))
                       }
                       className="w-14 rounded-lg border border-rose-200 px-2 py-1 text-center text-sm"
-                      disabled={!canAct}
+                      disabled={editDisabled}
+                      readOnly={isWalkin}
                     />
                     <button
                       type="button"
@@ -511,7 +509,7 @@ export default function ApprovePage() {
                           [it.id]: clamp0toMax((m[it.id] ?? def) + 1, max),
                         }))
                       }
-                      disabled={!canAct}
+                      disabled={editDisabled}
                     >
                       +
                     </button>
@@ -523,8 +521,8 @@ export default function ApprovePage() {
                     <button
                       className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:bg-slate-200 disabled:text-slate-500"
                       disabled={!canAct}
-                      onClick={() => void confirmOne(it.id)}
-                      title="useCount: 0 = donate semua; >0 = gunakan sejumlah tiket (maksimal sisa kuota)"
+                      onClick={() => void confirmOne(it.id, def)}
+                      title="useCount: 0 = donate semua (MASTER); Walk-in = 1 jika stok ada"
                     >
                       Confirm
                     </button>
