@@ -107,11 +107,13 @@ export async function fetchPool(): Promise<PoolResponse> {
 }
 
 // ---- Confirm (legacy payload)
+// ---- Confirm (useCount = jumlah tiket yang digunakan/didonasi)
 export async function confirmRequest(
   requestId: string,
-  useCount = 1
-): Promise<ConfirmResponse> {
-  const EVENT = ENV_EVENT_ID;
+  useCount = 1,
+  eventId?: string
+) {
+  const EVENT = eventId ?? ENV_EVENT_ID;
 
   const res = await fetch(`${BASE}/api/register-confirm`, {
     method: 'POST',
@@ -119,26 +121,40 @@ export async function confirmRequest(
     body: JSON.stringify({
       requestId,
       useCount,
-      eventId: EVENT,
-      source: 'MASTER',
+      eventId: EVENT,   // BE requires eventId
+      source: 'MASTER', // optional but safe to send
     }),
   });
 
-  const data = await safeJson<ConfirmResponse>(res).catch(() => {
-    return {
-      ok: false,
-      ticket: { code: '', status: '', name: '', email: '' },
-      allocatedRange: { from: 0, to: 0 },s
-      count: 0,
-    } as unknown as ConfirmResponse;
-  });
+  // Coba parse JSON; kalau gagal, jadikan null supaya bisa ditangani elegan
+  const data = (await res.json().catch(() => null)) as
+    | {
+        ok?: boolean;
+        message?: string;
+        reason?: string;
+        ticket?: { code?: string; status?: string; name?: string; email?: string };
+        allocatedRange?: { from?: number; to?: number };
+        count?: number;
+      }
+    | null;
 
   if (!res.ok) {
-    const msg = ((data as { message?: string })?.message || 'Approve gagal').toString();
+    const msg =
+      (data?.message || data?.reason || `Approve gagal: ${res.status}`).toString();
     throw new Error(msg);
   }
-  return data;
+
+  // Kembalikan data apa adanya dengan tipe longgar yang aman
+  return (data ?? {
+    ok: true,
+  }) as {
+    ok: boolean;
+    ticket?: { code?: string; status?: string; name?: string; email?: string };
+    allocatedRange?: { from: number; to: number };
+    count?: number;
+  };
 }
+
 
 // ---- Board snapshot sederhana
 export async function getBoard(eventId?: string): Promise<BoardResponse> {
