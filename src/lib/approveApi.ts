@@ -7,17 +7,26 @@ const EVENT = process.env.NEXT_PUBLIC_EVENT_ID || 'seed-event';
 export interface Registrant {
   id: string;
   email: string;
-  firstName?: string;
-  lastName?: string;
-  source?: string;
-  status?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  name?: string | null;         // kompat untuk payload lama
+  code?: string | null;         // kompat untuk payload lama (jika BE mengirimkan)
+  wa?: string | null;           // kompat WA
+  source?: 'MASTER' | 'WALKIN' | 'GIMMICK' | string;
+  status?: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | string;
+  isMasterMatch?: boolean | null;
+  masterQuota?: number | null;
+  issuedBefore?: number | null;
+  quotaRemaining?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface RegistrantList {
   data: Registrant[];
   total?: number;
+  limit?: number;
+  offset?: number;
 }
 
 type HttpOk<T> = { ok: true; data: T };
@@ -36,60 +45,71 @@ async function safeText(r: Response) {
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
-
 function pickArray(v: unknown, key: 'data' | 'items'): unknown[] | null {
   if (!isObj(v)) return null;
   const val = v[key];
   return Array.isArray(val) ? val : null;
 }
-
-function pickNum(v: unknown, key: 'total' | 'count'): number | undefined {
+function pickNum(v: unknown, key: 'total' | 'count' | 'limit' | 'offset'): number | undefined {
   if (!isObj(v)) return undefined;
   const n = v[key];
   return typeof n === 'number' ? n : undefined;
 }
 
 function normalizeRegistrantList(input: unknown): RegistrantList {
-  // 1) Bentuk { data: [] }
+  // { data: [] }
   const asData = pickArray(input, 'data');
   if (asData) {
     return {
       data: asData as Registrant[],
       total: pickNum(input, 'total') ?? pickNum(input, 'count') ?? asData.length,
+      limit: pickNum(input, 'limit'),
+      offset: pickNum(input, 'offset'),
     };
   }
-  // 2) Bentuk { items: [] }
+  // { items: [] }
   const asItems = pickArray(input, 'items');
   if (asItems) {
     return {
       data: asItems as Registrant[],
       total: pickNum(input, 'total') ?? pickNum(input, 'count') ?? asItems.length,
+      limit: pickNum(input, 'limit'),
+      offset: pickNum(input, 'offset'),
     };
   }
-  // 3) Bentuk [] langsung
+  // [] langsung
   if (Array.isArray(input)) {
-    return { data: input as Registrant[], total: input.length };
+    return { data: input as Registrant[], total: input.length, limit: undefined, offset: undefined };
   }
-  // 4) Default kosong
   return { data: [], total: 0 };
 }
 
-/** Get pending requests (Approve List) dengan fallback beberapa route. */
-export async function getPendingRequests(): Promise<RegistrantList> {
+export type GetPendingParams = {
+  eventId?: string;
+  status?: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'ALL';
+  source?: 'MASTER' | 'WALKIN' | 'GIMMICK' | 'ALL';
+  limit?: number;
+  offset?: number;
+  q?: string;
+};
+
+/** Get pending requests (dengan fallback beberapa route & dukungan pagination). */
+export async function getPendingRequests(params: GetPendingParams = {}): Promise<RegistrantList> {
   const qs = new URLSearchParams({
-    eventId: EVENT,
-    status: 'PENDING',
-    source: 'MASTER',
-    limit: String(10),
-    offset: String(0),
+    eventId: params.eventId ?? EVENT,
+    status: params.status ?? 'PENDING',
+    source: params.source ?? 'MASTER',
+    limit: String(params.limit ?? 10),
+    offset: String(params.offset ?? 0),
   });
+  if (params.q && params.q.trim()) qs.set('q', params.q.trim());
 
   const candidates = [
-    '/api/registrants',        // lama (saat ini 404 di env kamu)
+    '/api/registrants',        // lama (di env kamu sempat 404)
     '/api/register-request',   // kemungkinan baru
     '/api/register/requests',  // variasi
     '/api/registrations',      // variasi lain
-    '/api/register-queue',     // fallback sesuai file lama
+    '/api/register-queue',     // fallback (sesuai file lama)
   ];
 
   let lastErr: HttpErr | null = null;
